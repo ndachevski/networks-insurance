@@ -2,82 +2,92 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Protocol.java - Defines message parsing and response handling for the game protocol
+ * Protocol.java - define message format and how to parse/create json message for game protocol
+ * we use simple json-like format to send message between client and server. this class handle converting
+ * between string message and map so we can easily access message field
  */
 public class Protocol {
     
     /**
-     * Parse a JSON-like message string into a map
+     * parse json-like message string into map. message come like: {"type":"LOGIN","username":"bob","password":"secret"}
+     * we extract each field and put it in map so code can access by name instead of parsing each time
      */
     public static Map<String, Object> parseMessage(String message) {
         Map<String, Object> result = new HashMap<>();
         message = message.trim();
         
+        // message must start with { and end with } to be valid json
         if (!message.startsWith("{") || !message.endsWith("}")) {
             return result;
         }
         
-        // Remove outer braces
+        // remove the outer curly braces so we just have content inside
         message = message.substring(1, message.length() - 1).trim();
         
+        // if message empty after removing braces, return empty result
         if (message.isEmpty()) {
             return result;
         }
         
-        // Parse key-value pairs, handling nested objects
+        // parse key-value pair from message. some value might be nested object (like data field)
         int i = 0;
         while (i < message.length()) {
-            // Skip whitespace
+            // skip any whitespace
             while (i < message.length() && Character.isWhitespace(message.charAt(i))) {
                 i++;
             }
             if (i >= message.length()) break;
             
-            // Parse key
+            // parse key - key come between double quote mark
             if (message.charAt(i) != '"') break;
             int keyStart = i + 1;
             int keyEnd = message.indexOf('"', keyStart);
             if (keyEnd == -1) break;
             String key = message.substring(keyStart, keyEnd);
             
-            // Skip to colon
+            // skip until we find the colon
             i = keyEnd + 1;
             while (i < message.length() && message.charAt(i) != ':') {
                 i++;
             }
             if (i >= message.length()) break;
-            i++; // Skip colon
+            i++; // skip the colon
             
-            // Skip whitespace
+            // skip whitespace after colon
             while (i < message.length() && Character.isWhitespace(message.charAt(i))) {
                 i++;
             }
             if (i >= message.length()) break;
             
-            // Parse value
+            // parse value - can be string or nested object
             Object value;
             if (message.charAt(i) == '"') {
-                // String value
+                // string value come between quote
                 int valueStart = i + 1;
                 int valueEnd = message.indexOf('"', valueStart);
                 if (valueEnd == -1) break;
                 value = message.substring(valueStart, valueEnd);
                 i = valueEnd + 1;
             } else if (message.charAt(i) == '{') {
-                // Nested object (for data field)
-                int braceCount = 1;
-                int objStart = i + 1;
-                i++;
+                // nested object - like data field with x,y coordinate for move
+                // we need to find where nested object end by counting opening and closing brace
+                int braceCount = 1; // start with 1 because we already seen opening brace
+                int objStart = i + 1; // position right after opening brace
+                i++; // move past the opening brace
+                // go through content until we find matching closing brace
+                // we increment braceCount when see {, decrement when see }, stop when count reach 0
                 while (i < message.length() && braceCount > 0) {
-                    if (message.charAt(i) == '{') braceCount++;
-                    else if (message.charAt(i) == '}') braceCount--;
+                    if (message.charAt(i) == '{') braceCount++; // found nested opening brace
+                    else if (message.charAt(i) == '}') braceCount--; // found closing brace
                     i++;
                 }
+                // extract nested object content (everything between the braces)
                 String objContent = message.substring(objStart, i - 1);
+                // recursively parse nested object
                 Map<String, String> dataMap = parseNestedObject(objContent);
                 value = dataMap;
             } else {
-                // Simple value (shouldn't happen in our protocol, but handle it)
+                // simple value (shouldn't happen but handle it)
                 int valueEnd = i;
                 while (valueEnd < message.length() && message.charAt(valueEnd) != ',' && message.charAt(valueEnd) != '}') {
                     valueEnd++;
@@ -86,9 +96,10 @@ public class Protocol {
                 i = valueEnd;
             }
             
+            // add to result map
             result.put(key, value);
             
-            // Skip to next comma or end
+            // skip to next comma or end
             while (i < message.length() && message.charAt(i) != ',' && message.charAt(i) != '}') {
                 i++;
             }
@@ -101,7 +112,7 @@ public class Protocol {
     }
     
     /**
-     * Parse nested object (for data field)
+     * parse nested object inside message like data field. this have x,y coordinate for move
      */
     private static Map<String, String> parseNestedObject(String content) {
         Map<String, String> result = new HashMap<>();
@@ -112,34 +123,34 @@ public class Protocol {
         
         int i = 0;
         while (i < content.length()) {
-            // Skip whitespace
+            // skip whitespace
             while (i < content.length() && Character.isWhitespace(content.charAt(i))) {
                 i++;
             }
             if (i >= content.length()) break;
             
-            // Parse key
+            // parse key
             if (content.charAt(i) != '"') break;
             int keyStart = i + 1;
             int keyEnd = content.indexOf('"', keyStart);
             if (keyEnd == -1) break;
             String key = content.substring(keyStart, keyEnd);
             
-            // Skip to colon
+            // skip to colon
             i = keyEnd + 1;
             while (i < content.length() && content.charAt(i) != ':') {
                 i++;
             }
             if (i >= content.length()) break;
-            i++; // Skip colon
+            i++; // skip colon
             
-            // Skip whitespace
+            // skip whitespace
             while (i < content.length() && Character.isWhitespace(content.charAt(i))) {
                 i++;
             }
             if (i >= content.length()) break;
             
-            // Parse value
+            // parse value (between quote)
             if (content.charAt(i) != '"') break;
             int valueStart = i + 1;
             int valueEnd = content.indexOf('"', valueStart);
@@ -149,7 +160,7 @@ public class Protocol {
             
             i = valueEnd + 1;
             
-            // Skip to next comma
+            // skip to next comma
             while (i < content.length() && content.charAt(i) != ',') {
                 i++;
             }
@@ -162,22 +173,26 @@ public class Protocol {
     }
     
     /**
-     * Create a JSON message string from a map
+     * convert map to json message string so it can be send over network.
+     * reverse operation of parseMessage
      */
     public static String createMessage(Map<String, Object> data) {
         StringBuilder sb = new StringBuilder("{");
         boolean first = true;
         
+        // go through each field in map
         for (Map.Entry<String, Object> entry : data.entrySet()) {
             if (!first) {
                 sb.append(",");
             }
             first = false;
             
+            // add key
             sb.append("\"").append(entry.getKey()).append("\":");
             
             Object value = entry.getValue();
             if (value instanceof Map) {
+                // if value is nested map (like data field with x,y), convert it too
                 sb.append("{");
                 boolean firstData = true;
                 @SuppressWarnings("unchecked")
@@ -192,6 +207,7 @@ public class Protocol {
                 }
                 sb.append("}");
             } else {
+                // string value - put between quote
                 sb.append("\"").append(value.toString()).append("\"");
             }
         }
@@ -201,12 +217,14 @@ public class Protocol {
     }
     
     /**
-     * Create a simple message with type and optional fields
+     * create simple message quickly with type and optional field.
+     * convenience method so don't have to create map manually
      */
     public static String createSimpleMessage(String type, String... keyValues) {
         Map<String, Object> map = new HashMap<>();
         map.put("type", type);
         
+        // add optional key-value pair (come in pair so i += 2)
         for (int i = 0; i < keyValues.length; i += 2) {
             if (i + 1 < keyValues.length) {
                 map.put(keyValues[i], keyValues[i + 1]);
@@ -217,7 +235,7 @@ public class Protocol {
     }
     
     /**
-     * Create an error message
+     * create error message to send back to client when something wrong happen
      */
     public static String createErrorMessage(String error) {
         Map<String, Object> map = new HashMap<>();
@@ -227,7 +245,7 @@ public class Protocol {
     }
     
     /**
-     * Create a success message
+     * create success message to send back to client when operation success
      */
     public static String createSuccessMessage(String message) {
         Map<String, Object> map = new HashMap<>();

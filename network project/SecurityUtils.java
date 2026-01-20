@@ -6,43 +6,51 @@ import java.util.Base64;
 import java.util.regex.Pattern;
 
 /**
- * SecurityUtils.java - Security utilities for password hashing, validation, and sanitization
+ * SecurityUtils.java - provide secure password hashing, input validation, and sanitization
+ * this utility class help protect user account by hashing password before store, validating input,
+ * and removing dangerous character from user input to prevent injection attack
  */
 public class SecurityUtils {
+    // how long random salt should be (byte)
     private static final int SALT_LENGTH = 16;
+    // how many time we hash password to make it slow (so brute force harder)
     private static final int HASH_ITERATIONS = 10000;
+    // random number generator for salt
     private static final SecureRandom random = new SecureRandom();
     
-    // Input validation patterns
+    // pattern to validate username - only alphanumeric and underscore, 3-20 character
     private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_]{3,20}$");
+    // pattern to validate email address
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
+    // maximum length for user input to prevent huge input
     private static final int MAX_INPUT_LENGTH = 100;
     
     /**
-     * Hash a password using PBKDF2 with salt
+     * hash password using pbkdf2 with random salt so same password hash different every time.
+     * this way even if attacker get password hash, they cannot easily crack it
      */
     public static String hashPassword(String password) {
         try {
-            // Generate salt
+            // generate random salt so each password hash different
             byte[] salt = new byte[SALT_LENGTH];
             random.nextBytes(salt);
             
-            // Hash password with salt using PBKDF2
+            // hash password with salt using sha-256
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             md.update(salt);
             byte[] hash = md.digest(password.getBytes(StandardCharsets.UTF_8));
             
-            // Apply multiple iterations
+            // apply many iteration so it slow (this make brute force attack much slower)
             for (int i = 0; i < HASH_ITERATIONS; i++) {
                 hash = md.digest(hash);
             }
             
-            // Combine salt and hash
+            // combine salt and hash together
             byte[] combined = new byte[salt.length + hash.length];
             System.arraycopy(salt, 0, combined, 0, salt.length);
             System.arraycopy(hash, 0, combined, salt.length, hash.length);
             
-            // Return base64 encoded string
+            // encode to base64 so can store as string
             return Base64.getEncoder().encodeToString(combined);
         } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException("SHA-256 algorithm not available", e);
@@ -50,31 +58,32 @@ public class SecurityUtils {
     }
     
     /**
-     * Verify a password against a hash
+     * check if password correct by hashing it with same salt and compare result
      */
     public static boolean verifyPassword(String password, String hash) {
         try {
-            // Decode the hash
+            // decode the hash that stored
             byte[] combined = Base64.getDecoder().decode(hash);
             
-            // Extract salt
+            // extract salt from combined hash+salt
             byte[] salt = new byte[SALT_LENGTH];
             System.arraycopy(combined, 0, salt, 0, SALT_LENGTH);
             
-            // Hash the provided password with the same salt
+            // hash provided password with same salt
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             md.update(salt);
             byte[] passwordHash = md.digest(password.getBytes(StandardCharsets.UTF_8));
             
-            // Apply same iterations
+            // apply same number of iteration
             for (int i = 0; i < HASH_ITERATIONS; i++) {
                 passwordHash = md.digest(passwordHash);
             }
             
-            // Compare with stored hash
+            // extract stored hash from combined
             byte[] storedHash = new byte[combined.length - SALT_LENGTH];
             System.arraycopy(combined, SALT_LENGTH, storedHash, 0, storedHash.length);
             
+            // compare - use secure compare that take same time regardless of where difference happen
             return MessageDigest.isEqual(passwordHash, storedHash);
         } catch (Exception e) {
             return false;
@@ -82,16 +91,16 @@ public class SecurityUtils {
     }
     
     /**
-     * Check if a password is plaintext (for migration)
+     * check if password is plaintext (old format) so we can upgrade it to hashed
      */
     public static boolean isPlaintext(String passwordHash) {
-        // Plaintext passwords are typically short and don't contain base64 characters in this pattern
-        // Hashed passwords are longer base64 strings
+        // plaintext password short and not look like base64
+        // hashed password longer and only contain base64 character
         return passwordHash.length() < 50 || !passwordHash.matches("^[A-Za-z0-9+/=]+$");
     }
     
     /**
-     * Validate and sanitize username
+     * validate username - check if follow rule and not dangerous
      */
     public static String validateUsername(String username) {
         if (username == null) {
@@ -108,6 +117,7 @@ public class SecurityUtils {
             throw new IllegalArgumentException("Username too long (max " + MAX_INPUT_LENGTH + " characters)");
         }
         
+        // check if username follow pattern rule
         if (!USERNAME_PATTERN.matcher(username).matches()) {
             throw new IllegalArgumentException("Username must be 3-20 characters, alphanumeric and underscores only");
         }
@@ -116,13 +126,14 @@ public class SecurityUtils {
     }
     
     /**
-     * Validate and sanitize password
+     * validate password - check if strong enough
      */
     public static String validatePassword(String password) {
         if (password == null) {
             throw new IllegalArgumentException("Password cannot be null");
         }
         
+        // password must be at least 6 character
         if (password.length() < 6) {
             throw new IllegalArgumentException("Password must be at least 6 characters");
         }
@@ -135,7 +146,7 @@ public class SecurityUtils {
     }
     
     /**
-     * Validate and sanitize email
+     * validate email - check format correct
      */
     public static String validateEmail(String email) {
         if (email == null) {
@@ -152,6 +163,7 @@ public class SecurityUtils {
             throw new IllegalArgumentException("Email too long (max " + MAX_INPUT_LENGTH + " characters)");
         }
         
+        // check if email match expected pattern
         if (!EMAIL_PATTERN.matcher(email).matches()) {
             throw new IllegalArgumentException("Invalid email format");
         }
@@ -160,7 +172,7 @@ public class SecurityUtils {
     }
     
     /**
-     * Validate and sanitize name
+     * validate name - check not too long and remove dangerous character
      */
     public static String validateName(String name) {
         if (name == null) {
@@ -177,21 +189,21 @@ public class SecurityUtils {
             throw new IllegalArgumentException("Name too long (max " + MAX_INPUT_LENGTH + " characters)");
         }
         
-        // Remove potentially dangerous characters
+        // remove potentially dangerous character like html tag
         name = name.replaceAll("[<>\"'&]", "");
         
         return name;
     }
     
     /**
-     * Sanitize string to prevent injection attacks
+     * sanitize string to prevent injection attack - remove bad character
      */
     public static String sanitize(String input) {
         if (input == null) {
             return "";
         }
         
-        // Remove control characters and potentially dangerous characters
+        // remove control character and potentially dangerous character
         return input.replaceAll("[\\x00-\\x1F\\x7F<>\"'&]", "").trim();
     }
 }
