@@ -1,0 +1,101 @@
+=== HOW TO RUN THE GAME ===
+
+STEP 1: Compile all Java files
+------------------------------
+Open PowerShell or Command Prompt in the project directory and run:
+    javac *.java
+
+STEP 2: Start the Server
+-------------------------
+In one terminal window, run:
+    java Server
+
+You should see:
+    Game Server started on port 12345
+    Waiting for clients...
+
+STEP 3: Start Client(s) - CHOOSE ONE:
+--------------------------------------
+
+OPTION A: GUI Version (Recommended)
+    java ClientGUI
+    or
+    java GameClientGUI
+    
+    A window will open with:
+    - Login/Registration screen
+    - Player list
+    - Game board interface
+    - Statistics display
+
+OPTION B: Command Line Version
+    java Client
+    
+    You'll see:
+    === Tic-Tac-Toe Game Client ===
+    Type 'help' for commands
+    >
+
+STEP 4: Play the Game
+---------------------
+
+GUI VERSION:
+- Enter username and password, then click "Register" or "Login"
+- Once logged in, you'll see a list of online players
+- Click "Leaderboard" button to see top players by wins
+- Select a player and click "Challenge Selected Player"
+- When challenged, a dialog will appear - click "Yes" to accept
+- When a game starts, a new window opens with the game board
+- Click on any empty cell to make your move
+- The game will automatically update and show results
+- After game ends, you can:
+  * Click "Request Rematch" to play again with the same opponent
+  * Click "Back to Lobby" to return to the player list
+
+COMMAND LINE VERSION:
+In a client terminal, try these commands:
+
+1. Register a new account:
+   > register alice 1234
+
+2. Login:
+   > login alice 1234
+
+3. List online players:
+   > list
+
+4. Challenge another player (open another client first):
+   > challenge bob
+
+5. Accept a challenge (when challenged):
+   > accept
+
+6. Make a move (when in a game):
+   > move 0 0
+   > move 1 1
+   (coordinates are 0-2 for rows and columns)
+
+7. View your stats:
+   > stats
+
+8. View the board:
+   > board
+
+9. Request a rematch (after a game ends):
+   > rematch
+
+10. View leaderboard:
+   > leaderboard
+
+11. Logout:
+   > logout
+
+For all commands, type:
+   > help
+
+IMPORTANT NOTES:
+- Keep the server running while playing
+- You need at least 2 clients to play a game
+- The server must be started BEFORE clients connect
+- To test with 2 players, open 2 separate terminal windows and run "java Client" in each
+
