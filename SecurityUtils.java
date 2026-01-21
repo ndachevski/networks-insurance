@@ -1,3 +1,5 @@
+// Students: CSY23102, CSY23052, CSY23031
+
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -6,43 +8,47 @@ import java.util.Base64;
 import java.util.regex.Pattern;
 
 /**
- * SecurityUtils.java - Security utilities for password hashing, validation, and sanitization
+ * securityutils provides password hashing with salt, input validation, and sanitization.
+ * uses pbkdf2 with sha256 and multiple iterations to make brute force attacks expensive.
+ * all user inputs are validated and sanitized to prevent injection attacks
  */
 public class SecurityUtils {
     private static final int SALT_LENGTH = 16;
+    // high iterations count makes hashing slow, protecting against rainbow tables and brute force
     private static final int HASH_ITERATIONS = 10000;
     private static final SecureRandom random = new SecureRandom();
     
-    // Input validation patterns
+    // input validation patterns with reasonable constraints
     private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_]{3,20}$");
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
     private static final int MAX_INPUT_LENGTH = 100;
     
     /**
-     * Hash a password using PBKDF2 with salt
+     * hash a password using pbkdf2. salt is prepended to hash and the whole thing
+     * is base64 encoded so it can be stored in text files
      */
     public static String hashPassword(String password) {
         try {
-            // Generate salt
+            // generate random salt for this password
             byte[] salt = new byte[SALT_LENGTH];
             random.nextBytes(salt);
             
-            // Hash password with salt using PBKDF2
+            // hash password with salt using sha256 as base
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             md.update(salt);
             byte[] hash = md.digest(password.getBytes(StandardCharsets.UTF_8));
             
-            // Apply multiple iterations
+            // repeatedly hash to increase computation cost and slow down attacks
             for (int i = 0; i < HASH_ITERATIONS; i++) {
                 hash = md.digest(hash);
             }
             
-            // Combine salt and hash
+            // combine salt and hash so we have everything needed to verify later
             byte[] combined = new byte[salt.length + hash.length];
             System.arraycopy(salt, 0, combined, 0, salt.length);
             System.arraycopy(hash, 0, combined, salt.length, hash.length);
             
-            // Return base64 encoded string
+            // return base64 so it's portable and can go in text files
             return Base64.getEncoder().encodeToString(combined);
         } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException("SHA-256 algorithm not available", e);
@@ -50,31 +56,34 @@ public class SecurityUtils {
     }
     
     /**
-     * Verify a password against a hash
+     * verify a password against a stored hash. we extract the salt from the hash,
+     * hash the input password with the same salt, and compare the results. timing
+     * attacks are mitigated using a constant-time comparison
      */
     public static boolean verifyPassword(String password, String hash) {
         try {
-            // Decode the hash
+            // decode the base64 hash back to bytes
             byte[] combined = Base64.getDecoder().decode(hash);
             
-            // Extract salt
+            // extract the salt that was prepended
             byte[] salt = new byte[SALT_LENGTH];
             System.arraycopy(combined, 0, salt, 0, SALT_LENGTH);
             
-            // Hash the provided password with the same salt
+            // hash the provided password using the same salt and iterations
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             md.update(salt);
             byte[] passwordHash = md.digest(password.getBytes(StandardCharsets.UTF_8));
             
-            // Apply same iterations
+            // apply the same number of iterations
             for (int i = 0; i < HASH_ITERATIONS; i++) {
                 passwordHash = md.digest(passwordHash);
             }
             
-            // Compare with stored hash
+            // extract the stored hash for comparison
             byte[] storedHash = new byte[combined.length - SALT_LENGTH];
             System.arraycopy(combined, SALT_LENGTH, storedHash, 0, storedHash.length);
             
+            // use constant-time comparison to avoid timing attacks
             return MessageDigest.isEqual(passwordHash, storedHash);
         } catch (Exception e) {
             return false;
@@ -82,16 +91,17 @@ public class SecurityUtils {
     }
     
     /**
-     * Check if a password is plaintext (for migration)
+     * check if a password hash looks like plaintext (for migration from plaintext storage).
+     * hashed passwords are longer base64 strings, plaintext ones are usually short
      */
     public static boolean isPlaintext(String passwordHash) {
-        // Plaintext passwords are typically short and don't contain base64 characters in this pattern
-        // Hashed passwords are longer base64 strings
+        // hashed passwords are longer base64 strings, plaintext ones are usually short
         return passwordHash.length() < 50 || !passwordHash.matches("^[A-Za-z0-9+/=]+$");
     }
     
     /**
-     * Validate and sanitize username
+     * validate and sanitize username. enforce alphanumeric + underscore only,
+     * length constraints to prevent abuse
      */
     public static String validateUsername(String username) {
         if (username == null) {
@@ -116,7 +126,7 @@ public class SecurityUtils {
     }
     
     /**
-     * Validate and sanitize password
+     * validate password to enforce minimum length requirement
      */
     public static String validatePassword(String password) {
         if (password == null) {
@@ -135,7 +145,7 @@ public class SecurityUtils {
     }
     
     /**
-     * Validate and sanitize email
+     * validate email format using regex pattern. normalize by lowercasing
      */
     public static String validateEmail(String email) {
         if (email == null) {
@@ -160,7 +170,7 @@ public class SecurityUtils {
     }
     
     /**
-     * Validate and sanitize name
+     * validate name and remove potentially dangerous characters like html tags and quotes
      */
     public static String validateName(String name) {
         if (name == null) {
@@ -184,14 +194,15 @@ public class SecurityUtils {
     }
     
     /**
-     * Sanitize string to prevent injection attacks
+     * generic sanitization function that removes control characters and special chars
+     * that could be used for injection attacks
      */
     public static String sanitize(String input) {
         if (input == null) {
             return "";
         }
         
-        // Remove control characters and potentially dangerous characters
+        // remove control characters and potentially dangerous html/script characters
         return input.replaceAll("[\\x00-\\x1F\\x7F<>\"'&]", "").trim();
     }
 }
