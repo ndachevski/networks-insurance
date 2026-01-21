@@ -1,21 +1,27 @@
+// Students: CSY23102, CSY23052, CSY23031
+
 import java.io.*;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * UserManager.java - Handles user registration, authentication, and persistence
+ * usermanager handles all user persistence, authentication, and statistics management.
+ * it loads users from a file on startup, maintains online status, and provides
+ * leaderboard functionality. authentication uses password hashing via securityutils
  */
 public class UserManager {
     private final String usersFilePath;
+    // in-memory cache of all users, keyed by username
     private Map<String, User> users;
-    private Map<String, String> onlineUsers; // username -> sessionId
+    // maps online usernames to their session ids for active connection tracking
+    private Map<String, String> onlineUsers;
     
     public UserManager() {
         this("users.txt");
     }
     
     /**
-     * Constructor for testing with a custom users file path.
+     * constructor for testing - allows injection of custom users file path
      */
     public UserManager(String usersFilePath) {
         this.usersFilePath = usersFilePath;
@@ -25,7 +31,8 @@ public class UserManager {
     }
     
     /**
-     * Load users from file
+     * load users from file on startup. handles multiple formats for backward compatibility
+     * with migration from plaintext to hashed passwords
      */
     private void loadUsers() {
         File file = new File(usersFilePath);
@@ -49,13 +56,12 @@ public class UserManager {
                     String username = parts[0];
                     String password = parts[1];
                     
-                    // Handle multiple formats for backward compatibility:
-                    // - Old format (5 fields): username,password,wins,losses,draws
-                    // - Format with nickname (8 fields): username,password,name,email,nickname,wins,losses,draws
-                    // - Current format (7 fields): username,password,name,email,wins,losses,draws
+                    // support three format versions:
+                    // - old format (5 fields): username,password,wins,losses,draws
+                    // - format with nickname (8 fields): username,password,name,email,nickname,wins,losses,draws
+                    // - current format (7 fields): username,password,name,email,wins,losses,draws
                     if (parts.length >= 8) {
-                        // Format with nickname (old): username,password,name,email,nickname,wins,losses,draws
-                        // Skip nickname (parts[4]) and use name, email
+                        // old format with nickname (skip it and use name, email)
                         String name = parts[2];
                         String email = parts[3];
                         int wins = Integer.parseInt(parts[5]);
@@ -63,7 +69,7 @@ public class UserManager {
                         int draws = Integer.parseInt(parts[7]);
                         users.put(username, new User(username, password, name, email, wins, losses, draws));
                     } else if (parts.length >= 7) {
-                        // Current format: username,password,name,email,wins,losses,draws
+                        // current format: username,password,name,email,wins,losses,draws
                         String name = parts[2];
                         String email = parts[3];
                         int wins = Integer.parseInt(parts[4]);
@@ -71,11 +77,11 @@ public class UserManager {
                         int draws = Integer.parseInt(parts[6]);
                         users.put(username, new User(username, password, name, email, wins, losses, draws));
                     } else {
-                        // Old format: username,password,wins,losses,draws
-                    int wins = Integer.parseInt(parts[2]);
-                    int losses = Integer.parseInt(parts[3]);
-                    int draws = Integer.parseInt(parts[4]);
-                    users.put(username, new User(username, password, wins, losses, draws));
+                        // legacy format: username,password,wins,losses,draws
+                        int wins = Integer.parseInt(parts[2]);
+                        int losses = Integer.parseInt(parts[3]);
+                        int draws = Integer.parseInt(parts[4]);
+                        users.put(username, new User(username, password, wins, losses, draws));
                     }
                 }
             }
@@ -85,31 +91,33 @@ public class UserManager {
     }
     
     /**
-     * Save users to file with atomic write
+     * save users to file using atomic write pattern to prevent corruption.
+     * write to temp file first, then replace the old file. this avoids issues
+     * if the process crashes mid-write
      */
     private void saveUsers() {
         File file = new File(usersFilePath);
         File tempFile = new File(usersFilePath + ".tmp");
         
         try {
-            // Write to temporary file first
+            // write to temporary file first to avoid partial writes
             try (PrintWriter writer = new PrintWriter(new FileWriter(tempFile))) {
-            for (User user : users.values()) {
-                writer.println(user.toFileString());
-            }
+                for (User user : users.values()) {
+                    writer.println(user.toFileString());
+                }
             }
             
-            // Atomic move: replace old file with new one
+            // atomic move: replace old file with new one
             if (file.exists()) {
                 file.delete();
             }
             tempFile.renameTo(file);
             
-            // Set secure file permissions
+            // set secure file permissions so only owner can read/write
             setSecureFilePermissions();
         } catch (IOException e) {
             System.err.println("Error saving users: " + e.getMessage());
-            // Clean up temp file on error
+            // clean up temp file on error
             if (tempFile.exists()) {
                 tempFile.delete();
             }
@@ -117,7 +125,8 @@ public class UserManager {
     }
     
     /**
-     * Set secure file permissions (OS-dependent)
+     * set file permissions to make users.txt readable/writable by owner only.
+     * this prevents other users on the system from reading the password file
      */
     private void setSecureFilePermissions() {
         try {
@@ -126,39 +135,39 @@ public class UserManager {
                 return;
             }
             
-            // On Unix-like systems, set permissions to owner read/write only
+            // os-specific permissions: windows file attributes vs unix chmod
             if (System.getProperty("os.name").toLowerCase().contains("win")) {
-                // Windows: Use file attributes
-                file.setReadable(false, false); // Remove read for others
-                file.setWritable(false, false); // Remove write for others
-                file.setReadable(true, true);   // Owner can read
-                file.setWritable(true, true);   // Owner can write
+                // windows: use file attributes to restrict access
+                file.setReadable(false, false);
+                file.setWritable(false, false);
+                file.setReadable(true, true);
+                file.setWritable(true, true);
             } else {
-                // Unix/Linux/Mac: Use chmod via Runtime
+                // unix/linux/mac: use chmod to set permissions
                 Runtime.getRuntime().exec("chmod 600 " + file.getAbsolutePath());
             }
         } catch (Exception e) {
-            // Permissions setting is best-effort, don't fail if it doesn't work
+            // permissions are best-effort, don't fail if it doesn't work
             System.err.println("Warning: Could not set file permissions: " + e.getMessage());
         }
     }
     
     /**
-     * Register a new user
+     * register a new user with hashed password. returns false if username already exists
      */
     public boolean register(String username, String password) {
         return register(username, password, "", "");
     }
     
     /**
-     * Register a new user with additional information
+     * register a new user with full profile information
      */
     public boolean register(String username, String password, String name, String email) {
         if (users.containsKey(username)) {
-            return false; // Username already exists
+            return false;
         }
         
-        // Hash the password before storing
+        // hash password before storing - never store plaintext
         String hashedPassword = SecurityUtils.hashPassword(password);
         users.put(username, new User(username, hashedPassword, name, email, 0, 0, 0));
         saveUsers();
@@ -167,7 +176,9 @@ public class UserManager {
     }
     
     /**
-     * Authenticate a user
+     * authenticate a user by username and password. handles migration from plaintext
+     * passwords by upgrading them to hashed on successful login. this allows gradual
+     * migration from an older plaintext-based system
      */
     public boolean login(String username, String password) {
         User user = users.get(username);
@@ -177,57 +188,58 @@ public class UserManager {
         
         String storedPassword = user.getPassword();
         
-        // Check if password is hashed or plaintext (for migration)
+        // check if password is hashed or plaintext (for migration from old format)
         if (SecurityUtils.isPlaintext(storedPassword)) {
-            // Plaintext password - verify and upgrade to hash
+            // plaintext password - verify and upgrade to hash
             if (storedPassword.equals(password)) {
-                // Upgrade to hashed password
+                // upgrade to hashed password on successful login
                 user.setPassword(SecurityUtils.hashPassword(password));
                 saveUsers();
                 return true;
             }
             return false;
         } else {
-            // Hashed password - verify using hash
+            // hashed password - verify using hash comparison
             return SecurityUtils.verifyPassword(password, storedPassword);
         }
     }
     
     /**
-     * Check if user is online
+     * check if a user is currently online
      */
     public boolean isOnline(String username) {
         return onlineUsers.containsKey(username);
     }
     
     /**
-     * Add user to online list
+     * mark a user as online with their session id
      */
     public void setOnline(String username, String sessionId) {
         onlineUsers.put(username, sessionId);
     }
     
     /**
-     * Remove user from online list
+     * mark a user as offline - clean up when they disconnect
      */
     public void setOffline(String username) {
         onlineUsers.remove(username);
     }
     
     /**
-     * Get list of online usernames
+     * get list of currently online usernames
      */
     public String[] getOnlineUsers() {
         return onlineUsers.keySet().toArray(new String[0]);
     }
     
     /**
-     * Get leaderboard (top players by wins)
+     * get top N players sorted by wins then by total games played.
+     * used for leaderboard display to show the strongest players
      */
     public java.util.List<User> getLeaderboard(int limit) {
         java.util.List<User> leaderboard = new java.util.ArrayList<>(users.values());
         leaderboard.sort((a, b) -> {
-            // Sort by wins (descending), then by total games
+            // sort by wins descending, then by total games as tiebreaker to differentiate players with same wins
             int winDiff = b.getWins() - a.getWins();
             if (winDiff != 0) return winDiff;
             int totalA = a.getWins() + a.getLosses() + a.getDraws();
@@ -242,14 +254,14 @@ public class UserManager {
     }
     
     /**
-     * Get user statistics
+     * retrieve user statistics
      */
     public User getUser(String username) {
         return users.get(username);
     }
     
     /**
-     * Update user statistics after game
+     * update user statistics after game completes
      */
     public void updateStats(String username, String result) {
         User user = users.get(username);
@@ -266,7 +278,7 @@ public class UserManager {
     }
     
     /**
-     * User data class
+     * user data class - simple pojo that holds player profile and statistics
      */
     public static class User {
         private String username;
@@ -305,10 +317,10 @@ public class UserManager {
         public void incrementDraws() { draws++; }
         
         public String toFileString() {
-            // Format: username,password,name,email,wins,losses,draws
-            // For backward compatibility, if name/email are empty, use old format
+            // format: username,password,name,email,wins,losses,draws
+            // use old format if name/email are empty for backward compatibility
             if ((name == null || name.isEmpty()) && (email == null || email.isEmpty())) {
-            return username + "," + password + "," + wins + "," + losses + "," + draws;
+                return username + "," + password + "," + wins + "," + losses + "," + draws;
             }
             return username + "," + password + "," + 
                    (name != null ? name : "") + "," + 
@@ -317,4 +329,3 @@ public class UserManager {
         }
     }
 }
-
