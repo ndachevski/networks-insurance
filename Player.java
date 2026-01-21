@@ -1,5 +1,9 @@
+// Students: CSY23102, CSY23052, CSY23031
+
 /**
- * Player.java - Represents local player state
+ * player holds the local client-side player state. this includes authentication status,
+ * stats, and profile info. it's not persisted on its own - the server manages persistence
+ * through usermanager
  */
 public class Player {
     private String username;
@@ -9,6 +13,7 @@ public class Player {
     private int wins;
     private int losses;
     private int draws;
+    // tracks whether this player is authenticated to the server
     private boolean authenticated;
     
     public Player() {
@@ -88,8 +93,3 @@ public class Player {
         draws++;
     }
 }
-
-
-
-
-
