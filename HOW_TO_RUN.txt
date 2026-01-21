@@ -4,6 +4,9 @@ STEP 1: Compile all Java files
 ------------------------------
 Open PowerShell or Command Prompt in the project directory and run:
     javac -cp ".;lib\*" *.java
+    however if you donnt have the lib folder then you would have to run this commands so that it downloads them : powershell -ExecutionPolicy Bypass -File ".\download-junit.ps1". This would download them into your repository. As well as if you have issues with eror you will have to add this piece of code in the settings.json in your VS code : "java.project.referencedLibraries": ["lib/*.jar"]. With this done then we can procide with the starting of the server.
+
+Step 1.1 This is for information relating wether we will run this application on only 1 computer or on several via a network. Since this projects main goal to run it on a server, we do need to change 3 things. Once we decide which machine is going to be the server hoster we will need to go into that machines ipconfig and see which ipv4 address it has. This address is important since its the one we will be writing it in the GameClient for the CLI version and the GameClientGUI for the GUI version. On both version go to public class GameClient{ or the GameClientGUI{ class.and on the first line we should see Server_Host ="localhost". We will replace the local host with the actual ipv4 adress of the computer which is acting as a server. Then we recomiple everything with the javac -cp ".;lib\*" *.java, and then we can run the command to connect to the server and we can play the match.
 
 STEP 2: Start the Server
 -------------------------
