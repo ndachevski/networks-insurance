@@ -1,12 +1,22 @@
+// Students: CSY23102, CSY23052, CSY23031
+
 import java.util.Scanner;
 
 /**
  * GameUI.java - Command Line Interface for player actions
+ * 
+ * this is the CLI wrapper that handles all user input and display for the text-based client.
+ * it maintains a command loop reading from stdin, routing commands to the game client, and
+ * rendering output to the user. uses simple string-based commands (login, challenge, move, etc)
+ * and formats board/stats/leaderboard output for terminal display. also tracks pending challenges
+ * and rematch requests to handle accept/reject responses properly.
  */
 public class GameUI {
     private GameClient client;
     private Scanner scanner;
+    // hold the username of whoever challenged us so we know who we're responding to
     private String pendingChallenger;
+    // hold the username of whoever requested a rematch
     private String pendingRematchRequester;
     
     public GameUI(GameClient client) {
@@ -16,6 +26,13 @@ public class GameUI {
         this.pendingRematchRequester = null;
     }
     
+    /**
+     * main command loop - reads user input and routes to handlers
+     * 
+     * runs continuously until user quits/exits. each iteration reads a command line,
+     * splits it into tokens, and dispatches to the appropriate handler. some commands
+     * require authentication first (list, challenge) so we check player.isAuthenticated().
+     */
     public void run() {
         System.out.println("=== Tic-Tac-Toe Game Client ===");
         System.out.println("Type 'help' for commands");
@@ -37,6 +54,7 @@ public class GameUI {
                     break;
                     
                 case "login":
+                    // login requires username and password args
                     if (parts.length >= 3) {
                         client.login(parts[1], parts[2]);
                     } else {
@@ -45,6 +63,7 @@ public class GameUI {
                     break;
                     
                 case "list":
+                    // only authenticated players can list others - security check
                     if (client.getPlayer().isAuthenticated()) {
                         client.listPlayers();
                     } else {
@@ -53,6 +72,7 @@ public class GameUI {
                     break;
                     
                 case "challenge":
+                    // send challenge to target opponent
                     if (parts.length >= 2) {
                         if (client.getPlayer().isAuthenticated()) {
                             client.challenge(parts[1]);
@@ -65,6 +85,8 @@ public class GameUI {
                     break;
                     
                 case "accept":
+                    // accept either a challenge or rematch request (whichever is pending)
+                    // only one should be pending at a time per game state
                     if (pendingChallenger != null) {
                         client.respondToChallenge(pendingChallenger, "ACCEPT");
                         pendingChallenger = null;
@@ -77,6 +99,7 @@ public class GameUI {
                     break;
                     
                 case "reject":
+                    // reject either a challenge or rematch request, then clear the pending state
                     if (pendingChallenger != null) {
                         client.respondToChallenge(pendingChallenger, "REJECT");
                         pendingChallenger = null;
@@ -89,11 +112,13 @@ public class GameUI {
                     break;
                     
                 case "move":
+                    // make a move during game - requires x,y coords (0-2), validates bounds before sending
                     if (parts.length >= 3) {
                         if (client.isInGame()) {
                             try {
                                 int x = Integer.parseInt(parts[1]);
                                 int y = Integer.parseInt(parts[2]);
+                                // bounds check on client side before wasting a server message
                                 if (x >= 0 && x < 3 && y >= 0 && y < 3) {
                                     client.makeMove(x, y);
                                 } else {
@@ -111,6 +136,7 @@ public class GameUI {
                     break;
                     
                 case "board":
+                    // display current game board if we're in a game
                     if (client.isInGame()) {
                         showBoard();
                     } else {
@@ -119,24 +145,29 @@ public class GameUI {
                     break;
                     
                 case "stats":
+                    // show local player stats from their Player object
                     showStats();
                     break;
                     
                 case "rematch":
+                    // request rematch with previous opponent
                     client.requestRematch();
                     break;
                     
                 case "leaderboard":
+                    // request top players ranking from server
                     client.requestLeaderboard();
                     break;
                     
                 case "logout":
+                    // send logout message to server and cleanly exit command loop
                     client.logout();
                     System.out.println("Logged out. Goodbye!");
                     return;
                     
                 case "quit":
                 case "exit":
+                    // exit without sending logout (handles both cases)
                     client.logout();
                     System.out.println("Goodbye!");
                     return;
@@ -151,14 +182,25 @@ public class GameUI {
         }
     }
     
+    /**
+     * display formatted info message to stdout
+     */
     public void showMessage(String message) {
         System.out.println("[INFO] " + message);
     }
     
+    /**
+     * display formatted error message to stdout
+     */
     public void showError(String error) {
         System.out.println("[ERROR] " + error);
     }
     
+    /**
+     * print player stats from their Player object
+     * 
+     * only shows stats if player is authenticated - displays win/loss/draw counts and username
+     */
     public void showStats() {
         Player player = client.getPlayer();
         if (player.isAuthenticated()) {
@@ -173,6 +215,12 @@ public class GameUI {
         }
     }
     
+    /**
+     * display list of online players received from server
+     * 
+     * called by game client when LIST_PLAYERS response arrives with player array.
+     * excludes self (user can't challenge themselves)
+     */
     public void updatePlayersList(String[] players) {
         if (players.length > 0) {
             System.out.println("\n=== Online Players ===");
@@ -185,6 +233,11 @@ public class GameUI {
         }
     }
     
+    /**
+     * notify user of incoming challenge and store pending challenger for accept/reject response
+     * 
+     * stores challenger name so accept/reject commands know exactly who to respond to
+     */
     public void showChallenge(String challenger) {
         this.pendingChallenger = challenger;
         System.out.println("\n=== CHALLENGE ===");
@@ -193,14 +246,27 @@ public class GameUI {
         System.out.println("==================\n");
     }
     
+    /**
+     * store pending challenger username for later accept/reject
+     */
     public void setPendingChallenger(String challenger) {
         this.pendingChallenger = challenger;
     }
     
+    /**
+     * store pending rematch requester username for later accept/reject
+     */
     public void setPendingRematchRequester(String requester) {
         this.pendingRematchRequester = requester;
     }
     
+    /**
+     * render tic-tac-toe board to stdout with grid lines and row/col labels
+     * 
+     * displays 3x3 board using coordinates (row, col) from 0-2. uses pipes and dashes
+     * to draw grid. spaces shown as empty, X and O for players. called by "board" command
+     * and also after each move to show updated state.
+     */
     public void showBoard() {
         char[][] board = client.getCurrentBoard();
         System.out.println("\n  0   1   2");
@@ -225,6 +291,14 @@ public class GameUI {
         System.out.println();
     }
     
+    /**
+     * handle register command - prompts for name and email after username and password
+     * 
+     * takes register command with username and password from parts[1] and parts[2],
+     * then prompts user for name and email via stdout. validates that both are non-empty
+     * before sending registration request to client which handles serialization and
+     * network transmission
+     */
     private void handleRegister(String[] parts) {
         if (parts.length >= 3) {
             System.out.print("Enter your name: ");
@@ -241,6 +315,7 @@ public class GameUI {
                 return;
             }
             
+            // delegate to client which serializes and sends to server
             client.register(parts[1], parts[2], name, email);
         } else {
             showError("Usage: register <username> <password>");
@@ -248,6 +323,11 @@ public class GameUI {
         }
     }
     
+    /**
+     * print command reference for user
+     * 
+     * displays all available commands and their syntax with descriptions
+     */
     private void showHelp() {
         System.out.println("\n=== Available Commands ===");
         System.out.println("register <username> <password> - Register a new account (prompts for name and email)");
@@ -267,4 +347,3 @@ public class GameUI {
         System.out.println("============================\n");
     }
 }
-
