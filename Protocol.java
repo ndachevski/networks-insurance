@@ -1,13 +1,20 @@
+// Students: CSY23102, CSY23052, CSY23031
+
 import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Protocol.java - Defines message parsing and response handling for the game protocol
+ * protocol handles all message serialization/deserialization. Uses a simple custom JSON-like
+ * format instead of a third-party JSON library to keep dependencies minimal, avoid security
+ * vulnerabilities from external code, and have full control over parsing. all messages are strings
+ * terminated by newlines for streaming over sockets. intentionally simple to keep code auditable.
  */
 public class Protocol {
     
     /**
-     * Parse a JSON-like message string into a map
+     * parse a JSON-like message string into a map. handles nested objects for complex
+     * data like board state. intentionally simple parser - doesn't support all JSON features,
+     * just what we need for game protocol (strings, numbers, nested maps).
      */
     public static Map<String, Object> parseMessage(String message) {
         Map<String, Object> result = new HashMap<>();
@@ -101,7 +108,8 @@ public class Protocol {
     }
     
     /**
-     * Parse nested object (for data field)
+     * parse nested object (for data field). used when board state or other complex
+     * data needs to be embedded in the message
      */
     private static Map<String, String> parseNestedObject(String content) {
         Map<String, String> result = new HashMap<>();
@@ -162,7 +170,8 @@ public class Protocol {
     }
     
     /**
-     * Create a JSON message string from a map
+     * create a json message string from a map. handles nested maps for complex data
+     * by serializing them as nested objects
      */
     public static String createMessage(Map<String, Object> data) {
         StringBuilder sb = new StringBuilder("{");
@@ -201,7 +210,8 @@ public class Protocol {
     }
     
     /**
-     * Create a simple message with type and optional fields
+     * create a message with type and optional key-value fields. convenience method
+     * for building simple messages without constructing a map
      */
     public static String createSimpleMessage(String type, String... keyValues) {
         Map<String, Object> map = new HashMap<>();
@@ -217,7 +227,7 @@ public class Protocol {
     }
     
     /**
-     * Create an error message
+     * create an error message with type=ERROR and message field
      */
     public static String createErrorMessage(String error) {
         Map<String, Object> map = new HashMap<>();
@@ -227,7 +237,7 @@ public class Protocol {
     }
     
     /**
-     * Create a success message
+     * create a success message with type=SUCCESS and message field
      */
     public static String createSuccessMessage(String message) {
         Map<String, Object> map = new HashMap<>();
@@ -236,4 +246,3 @@ public class Protocol {
         return createMessage(map);
     }
 }
-
