@@ -4,37 +4,53 @@ STEP 1: Compile all Java files
 ------------------------------
 Open PowerShell or Command Prompt in the project directory and run:
     javac -cp ".;lib\*" *.java
-    however if you donnt have the lib folder then you would have to run this commands so that it downloads them : powershell -ExecutionPolicy Bypass -File ".\download-junit.ps1". This would download them into your repository. As well as if you have issues with eror you will have to add this piece of code in the settings.json in your VS code : "java.project.referencedLibraries": ["lib/*.jar"]. With this done then we can procide with the starting of the server.
 
-Step 1.1 This is for information relating wether we will run this application on only 1 computer or on several via a network. Since this projects main goal to run it on a server, we do need to change 3 things. Once we decide which machine is going to be the server hoster we will need to go into that machines ipconfig and see which ipv4 address it has. This address is important since its the one we will be writing it in the GameClient for the CLI version and the GameClientGUI for the GUI version. On both version go to public class GameClient{ or the GameClientGUI{ class.and on the first line we should see Server_Host ="localhost". We will replace the local host with the actual ipv4 adress of the computer which is acting as a server. Then we recomiple everything with the javac -cp ".;lib\*" *.java, and then we can run the command to connect to the server and we can play the match.
+If you don't have the lib folder, download the dependencies first:
+    powershell -ExecutionPolicy Bypass -File ".\download-junit.ps1"
+
+If you're using VS Code, add this to your settings.json to resolve library dependencies:
+    "java.project.referencedLibraries": ["lib/*.jar"]
+
+STEP 1.1: Network Configuration (Optional)
+-------------------------------------------
+If you want to run this on multiple computers over a network, you'll need to configure the server address.
+
+1. Decide which machine will act as the server.
+2. On that machine, open Command Prompt and run: ipconfig
+3. Find the IPv4 address (something like 192.168.1.100).
+4. On each client machine, open GameClient.java or GameClientGUI.java.
+5. Find the line: Server_Host = "localhost"
+6. Replace "localhost" with the server's IPv4 address.
+7. Recompile: javac -cp ".;lib\*" *.java
+8. Now clients can connect to the remote server.
 
 STEP 2: Start the Server
--------------------------
-In one terminal window, run:
+------------------------
+Open a terminal window and run:
     java Server
 
-You should see:
+You should see output like:
     Game Server started on port 12345
     Waiting for clients...
 
-STEP 3: Start Client(s) - CHOOSE ONE:
---------------------------------------
+STEP 3: Start a Client (Choose One)
+------------------------------------
 
 OPTION A: GUI Version (Recommended)
-    java ClientGUI
-    or
+Run either:
     java GameClientGUI
-    
-    A window will open with:
-    - Login/Registration screen
-    - Player list
-    - Game board interface
-    - Statistics display
+
+A window will open with:
+- Login/Registration screen
+- Player list
+- Game board interface
+- Statistics display
 
 OPTION B: Command Line Version
+Run:
     java Client
-    
-    You'll see:
+
+You'll see:
     === Tic-Tac-Toe Game Client ===
     Type 'help' for commands
     >
@@ -43,17 +59,17 @@ STEP 4: Play the Game
 ---------------------
 
 GUI VERSION:
-- Enter username and password, then click "Register" or "Login"
-- Once logged in, you'll see a list of online players
-- Click "Leaderboard" button to see top players by wins
-- Select a player and click "Challenge Selected Player"
-- When challenged, a dialog will appear - click "Yes" to accept
-- When a game starts, a new window opens with the game board
-- Click on any empty cell to make your move
-- The game will automatically update and show results
-- After game ends, you can:
-  * Click "Request Rematch" to play again with the same opponent
-  * Click "Back to Lobby" to return to the player list
+1. Enter username and password, then click "Register" or "Login"
+2. Once logged in, you'll see a list of online players
+3. Click "Leaderboard" to see the top players by wins
+4. Select a player and click "Challenge Selected Player"
+5. When challenged, a dialog appears - click "Yes" to accept
+6. A new window opens with the game board
+7. Click on any empty cell to make your move
+8. The game updates automatically and shows results
+9. After a game ends, you can:
+   - Click "Request Rematch" to play again with the same opponent
+   - Click "Back to Lobby" to return to the player list
 
 COMMAND LINE VERSION:
 In a client terminal, try these commands:
@@ -93,14 +109,15 @@ In a client terminal, try these commands:
 11. Logout:
    > logout
 
-For all commands, type:
+12. View all available commands:
    > help
 
 IMPORTANT NOTES:
-- Keep the server running while playing
-- You need at least 2 clients to play a game
-- The server must be started BEFORE clients connect
-- To test with 2 players, open 2 separate terminal windows and run "java Client" in each
+- Always keep the server running while playing
+- You need at least 2 clients to play a game (you and an opponent)
+- Start the server BEFORE launching any clients
+- To test with 2 players, open 2 separate terminal windows and run "java Client" in each one
+- The game board uses coordinates 0-2 for rows and columns
 
 === RUNNING JUNIT TESTS ===
 
