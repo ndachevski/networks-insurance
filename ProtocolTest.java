@@ -1,3 +1,5 @@
+// Students: CSY23102, CSY23052, CSY23031
+
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -6,11 +8,14 @@ import java.util.Map;
 
 /**
  * JUnit 4 tests for Protocol (parseMessage, createMessage, round-trip, edge cases).
+ * Tests the custom JSON-like message serialization/deserialization used throughout the system.
+ * Ensures messages can be correctly serialized and deserialized without data loss
  */
 public class ProtocolTest {
 
     @Test
     public void parseMessage_simpleValid() {
+        // test parsing a simple message with basic fields
         Map<String, Object> got = Protocol.parseMessage("{\"type\":\"MOVE\",\"x\":\"1\",\"y\":\"2\"}");
         Assert.assertEquals("MOVE", got.get("type"));
         Assert.assertEquals("1", got.get("x"));
@@ -19,6 +24,7 @@ public class ProtocolTest {
 
     @Test
     public void parseMessage_withNestedData() {
+        // test parsing messages with nested objects (used for board state)
         String raw = "{\"type\":\"MOVE\",\"data\":{\"x\":\"0\",\"y\":\"2\"}}";
         Map<String, Object> got = Protocol.parseMessage(raw);
         Assert.assertEquals("MOVE", got.get("type"));
@@ -31,18 +37,21 @@ public class ProtocolTest {
 
     @Test
     public void parseMessage_emptyObject() {
+        // test parsing empty objects returns empty map
         Map<String, Object> got = Protocol.parseMessage("{}");
         Assert.assertTrue(got.isEmpty());
     }
 
     @Test
     public void parseMessage_emptyString() {
+        // test parsing empty string returns empty map
         Map<String, Object> got = Protocol.parseMessage("");
         Assert.assertTrue(got.isEmpty());
     }
 
     @Test
     public void parseMessage_missingBraces() {
+        // test that malformed messages without proper braces return empty maps
         Assert.assertTrue(Protocol.parseMessage("{\"a\":\"b\"").isEmpty());
         Assert.assertTrue(Protocol.parseMessage("\"a\":\"b\"}").isEmpty());
         Assert.assertTrue(Protocol.parseMessage("no braces").isEmpty());
@@ -50,12 +59,14 @@ public class ProtocolTest {
 
     @Test
     public void parseMessage_whitespaceTrimmed() {
+        // test that extra whitespace in messages is handled correctly
         Map<String, Object> got = Protocol.parseMessage("  { \"type\" : \"LOGIN\" }  ");
         Assert.assertEquals("LOGIN", got.get("type"));
     }
 
     @Test
     public void createMessage_simple() {
+        // test that creating a message and parsing it back preserves data (round-trip test)
         Map<String, Object> m = new HashMap<>();
         m.put("type", "LOGIN");
         m.put("username", "alice");
@@ -69,6 +80,7 @@ public class ProtocolTest {
 
     @Test
     public void createMessage_withNestedMap() {
+        // test round-trip with nested objects to verify complex data survives serialization
         Map<String, Object> outer = new HashMap<>();
         outer.put("type", "MOVE");
         Map<String, String> data = new HashMap<>();
@@ -87,6 +99,7 @@ public class ProtocolTest {
 
     @Test
     public void createSimpleMessage() {
+        // test the helper method for creating simple key-value messages
         String s = Protocol.createSimpleMessage("CHALLENGE", "opponent", "bob");
         Map<String, Object> m = Protocol.parseMessage(s);
         Assert.assertEquals("CHALLENGE", m.get("type"));
