@@ -1,0 +1,95 @@
+erDiagram
+  USER {
+    string username PK
+    string passwordHash
+    string name
+    string email
+    string nickname
+    int wins
+    int losses
+    int draws
+    datetime createdAt
+    datetime lastLoginAt
+    boolean isOnline
+  }
+
+  CLIENT_CONNECTION {
+    string connectionId PK
+    string username FK
+    string socketAddress
+    datetime connectedAt
+    datetime disconnectedAt
+    string status "ONLINE|OFFLINE"
+  }
+
+  GAME_SESSION {
+    string sessionId PK
+    string playerX FK
+    string playerO FK
+    string currentPlayer "X|O"
+    string status "ACTIVE|FINISHED|ABORTED"
+    string winner
+    datetime startedAt
+    datetime endedAt
+  }
+
+  MOVE {
+    string moveId PK
+    string sessionId FK
+    string player FK
+    int x
+    int y
+    int turnNumber
+    datetime createdAt
+  }
+
+  CHALLENGE {
+    string challengeId PK
+    string fromUser FK
+    string toUser FK
+    string status "PENDING|ACCEPTED|REJECTED|CANCELLED|EXPIRED"
+    datetime createdAt
+    datetime resolvedAt
+  }
+
+  REMATCH_REQUEST {
+    string rematchId PK
+    string previousSessionId FK
+    string fromUser FK
+    string toUser FK
+    string status "PENDING|ACCEPTED|REJECTED|CANCELLED|EXPIRED"
+    datetime createdAt
+    datetime resolvedAt
+  }
+
+  LOGIN_ATTEMPT {
+    string attemptId PK
+    string key
+    string username FK
+    int attemptsCount
+    datetime firstAttemptAt
+    datetime lastAttemptAt
+    datetime blockedUntil
+  }
+
+  LAST_OPPONENT {
+    string user PK
+    string opponent FK
+    datetime lastPlayedAt
+    string lastSessionId FK
+  }
+
+  USER ||--o{ CLIENT_CONNECTION : "has"
+  USER ||--o{ GAME_SESSION : "plays as X"
+  USER ||--o{ GAME_SESSION : "plays as O"
+  GAME_SESSION ||--o{ MOVE : "contains"
+  USER ||--o{ MOVE : "makes"
+  USER ||--o{ CHALLENGE : "sends"
+  USER ||--o{ CHALLENGE : "receives"
+  GAME_SESSION ||--o{ REMATCH_REQUEST : "spawns"
+  USER ||--o{ REMATCH_REQUEST : "sends"
+  USER ||--o{ REMATCH_REQUEST : "receives"
+  USER ||--|| LAST_OPPONENT : "has"
+  USER ||--o{ LAST_OPPONENT : "isOpponent"
+  GAME_SESSION ||--o{ LAST_OPPONENT : "references"
+  USER ||--o{ LOGIN_ATTEMPT : "has attempts"
