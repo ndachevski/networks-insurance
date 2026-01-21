@@ -1,7 +1,0 @@
-nik,jEP/KoRt8AkQg9XCglhMqQe3Ufax+uzXB4Tkx8JiCRDsHpB63/peqxXRF15gxc3Z,12354,123@gmail.com,0,0,0
-123,7rqzpZF3kZjGu3fgNg75kT/knLNblmg+iB6kuhSqbzl0H17msh/v2r+YJDsWQw6Y,123,123@gmail.com,0,0,0
-pece,UkygT9cUW2CqXOJSCSmYGVPmdhQcksg+ea1novqMdEaIGdrouzbKrr8SmFZwrfsp,pece vece,pece@gmail.com,0,0,0
-1234,g9qhkRq9UtEFwZJq8TZQFCOgttObDzdK0VCgttHVoKl7r4wwwQahuyg+Zu5NuwJW,123,123@gmail.com,0,0,0
-123456,cq211uktPZN6hwcuUVgAlCKRhFciM/pPDDJOZe9EOdCafs5UPnk2ofYg95sEJep7,123456,1234@gmail.com,4,8,1
-5555,Kb2avauxg9pGBD5kbNyfUZEAsWw+1eFebNXeRDvLvUfWNOLa1MkVZiGOEwXoy5ci,123,12@gmail.com,0,0,0
-12345,gMF5icdhmOvLG9ILzqI5GSw2AYHwGT5vXEi6e1+w6GlbVlgLijFH0JNMu0RMFmHN,123,1123@gail.com,8,4,1
