@@ -1,10 +1,12 @@
+// Students: CSY23102, CSY23052, CSY23031
+
 /**
-   client.java  is the main client entry point
-   this is simple wrapper that start the game client by calling game client main method
+ * client is a simple wrapper that delegates to gameclient.
+ * provides a clean entry point for the command-line version
  */
 public class Client {
     public static void main(String[] args) {
-        // Use GameClient's main method
+        // forward to gameclient main which handles all the logic
         GameClient.main(args);
     }
 }
