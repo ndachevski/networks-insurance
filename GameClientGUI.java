@@ -1,3 +1,5 @@
+// Students: CSY23102, CSY23052, CSY23031
+
 import javax.swing.*;
 import java.awt.*;
 import java.io.*;
@@ -6,6 +8,17 @@ import java.util.Map;
 
 /**
  * GameClientGUI.java - GUI version of the game client using Swing
+ * 
+ * this is the swing-based client replacing the CLI interface with a graphical UI.
+ * manages three main windows: login (registration/auth), main lobby (player list and challenges),
+ * and game (3x3 board and move buttons). handles all server communication async via ServerListenerGUI
+ * thread reading in the background. uses SwingUtilities.invokeLater to route all server messages
+ * to the event dispatch thread for thread-safe GUI updates.
+ * 
+ * the overall flow is: login window -> main lobby window (if authenticated) -> game window (when
+ * game starts). game state is tracked locally (currentBoard, inGame, currentOpponent, etc) and
+ * synced with server updates. the registration dialog is a modal popup that appears when user
+ * clicks register button on login screen.
  */
 public class GameClientGUI {
     private static final String SERVER_HOST = "localhost";
@@ -17,22 +30,26 @@ public class GameClientGUI {
     private ServerListenerGUI listener;
     private Player player;
     
-    // GUI Components
+    // GUI Components - login window
     private JFrame loginFrame;
+    // GUI Components - main lobby window
     private JFrame mainFrame;
+    // GUI Components - game window
     private JFrame gameFrame;
     private JTextField usernameField;
     private JPasswordField passwordField;
     private DefaultListModel<String> playersListModel;
     private JList<String> playersList;
     private JButton[][] boardButtons;
-    private JLabel statusLabel; // Main window status
-    private JLabel gameStatusLabel; // Game window status
+    private JLabel statusLabel; // status display in main lobby window
+    private JLabel gameStatusLabel; // status display in game window
     private JLabel currentPlayerLabel;
     private JLabel statsLabel;
-    private JDialog registrationDialog; // Reference to registration dialog
-    private JLabel registrationStatusLabel; // Status label in registration dialog
-    private boolean isRegistering; // Track if we're in registration process
+    private JDialog registrationDialog; // modal dialog for registration
+    private JLabel registrationStatusLabel; // message display in registration dialog
+    // track if we're currently in the registration flow so we route messages to the registration dialog
+    private boolean isRegistering;
+    // game state tracking
     private String currentGameId;
     private String currentOpponent;
     private char[][] currentBoard;
@@ -48,6 +65,14 @@ public class GameClientGUI {
         createLoginWindow();
     }
     
+    /**
+     * build the login window with username/password fields and register/login buttons
+     * 
+     * creates the initial login frame displayed on app startup. uses gridbag layout to
+     * position components. includes password show/hide toggle and enter key to submit.
+     * register button opens modal registration dialog, login button connects to server
+     * and sends login message.
+     */
     private void createLoginWindow() {
         loginFrame = new JFrame("Tic-Tac-Toe - Login");
         loginFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -67,7 +92,7 @@ public class GameClientGUI {
         titleLabel.setFont(new Font("Arial", Font.BOLD, 18));
         mainPanel.add(titleLabel, gbc);
         
-        // Username
+        // Username field
         gbc.gridwidth = 1;
         gbc.gridy = 1;
         gbc.gridx = 0;
@@ -78,7 +103,7 @@ public class GameClientGUI {
         usernameField = new JTextField(15);
         mainPanel.add(usernameField, gbc);
         
-        // Password (with show/hide toggle)
+        // Password field with show/hide toggle
         gbc.gridy = 2;
         gbc.gridx = 0;
         gbc.fill = GridBagConstraints.NONE;
@@ -89,6 +114,7 @@ public class GameClientGUI {
         gbc.weightx = 1.0;
         passwordField = new JPasswordField(15);
         JCheckBox showPasswordCheck = new JCheckBox("Show");
+        // toggle between showing actual chars and masking as dots
         showPasswordCheck.addActionListener(e -> {
             passwordField.setEchoChar(showPasswordCheck.isSelected() ? (char) 0 : '\u2022');
         });
@@ -112,7 +138,7 @@ public class GameClientGUI {
         loginButton.addActionListener(e -> handleLogin());
         mainPanel.add(loginButton, gbc);
         
-        // Status label
+        // Status label for messages
         gbc.gridy = 4;
         gbc.gridx = 0;
         gbc.gridwidth = 2;
@@ -124,15 +150,24 @@ public class GameClientGUI {
         loginFrame.add(mainPanel, BorderLayout.CENTER);
         loginFrame.setVisible(true);
         
-        // Enter key to login
+        // pressing enter in password field triggers login
         passwordField.addActionListener(e -> handleLogin());
     }
     
+    /**
+     * show modal registration dialog for new account creation
+     * 
+     * creates a modal dialog with username, password, name, email fields. includes
+     * show/hide password toggle. on submit validates all fields are non-empty, connects
+     * to server, and sends registration request. routes server responses to the
+     * registration dialog's status label while isRegistering flag is set. if registration
+     * succeeds the dialog closes and user returns to login screen.
+     */
     private void showRegistrationDialog() {
         registrationDialog = new JDialog(loginFrame, "Register New Account", true);
         registrationDialog.setSize(400, 320);
-        registrationDialog.setMinimumSize(new Dimension(400, 320)); // Prevent window from shrinking
-        registrationDialog.setResizable(false); // Prevent manual resizing
+        registrationDialog.setMinimumSize(new Dimension(400, 320)); // prevent shrinking
+        registrationDialog.setResizable(false); // prevent manual resizing
         registrationDialog.setLocationRelativeTo(loginFrame);
         registrationDialog.setLayout(new BorderLayout(10, 10));
         
@@ -148,7 +183,7 @@ public class GameClientGUI {
         titleLabel.setFont(new Font("Arial", Font.BOLD, 16));
         mainPanel.add(titleLabel, gbc);
         
-        // Username
+        // Username field
         gbc.gridwidth = 1;
         gbc.gridy = 1;
         gbc.gridx = 0;
@@ -159,7 +194,7 @@ public class GameClientGUI {
         JTextField regUsernameField = new JTextField(20);
         mainPanel.add(regUsernameField, gbc);
         
-        // Password (with show/hide toggle)
+        // Password field with show/hide toggle
         gbc.gridy = 2;
         gbc.gridx = 0;
         gbc.fill = GridBagConstraints.NONE;
@@ -178,7 +213,7 @@ public class GameClientGUI {
         regPasswordPanel.add(showRegPasswordCheck, BorderLayout.EAST);
         mainPanel.add(regPasswordPanel, gbc);
         
-        // Name
+        // Name field
         gbc.gridy = 3;
         gbc.gridx = 0;
         gbc.fill = GridBagConstraints.NONE;
@@ -190,7 +225,7 @@ public class GameClientGUI {
         JTextField regNameField = new JTextField(20);
         mainPanel.add(regNameField, gbc);
         
-        // Email
+        // Email field
         gbc.gridy = 4;
         gbc.gridx = 0;
         gbc.fill = GridBagConstraints.NONE;
@@ -202,7 +237,7 @@ public class GameClientGUI {
         JTextField regEmailField = new JTextField(20);
         mainPanel.add(regEmailField, gbc);
         
-        // Status label
+        // Status label for registration messages
         gbc.gridy = 5;
         gbc.gridx = 0;
         gbc.gridwidth = 2;
@@ -216,7 +251,7 @@ public class GameClientGUI {
         JButton submitButton = new JButton("Register");
         JButton cancelButton = new JButton("Cancel");
         
-        // Store reference to dialog for response handling
+        // store reference to dialog for response handling
         final JDialog dialogRef = registrationDialog;
         final JLabel statusRef = registrationStatusLabel;
         
@@ -226,6 +261,7 @@ public class GameClientGUI {
             String name = regNameField.getText().trim();
             String email = regEmailField.getText().trim();
             
+            // client-side validation before sending to server
             if (username.isEmpty() || password.isEmpty()) {
                 statusRef.setText("Username and password are required");
                 statusRef.setForeground(Color.RED);
@@ -244,13 +280,14 @@ public class GameClientGUI {
                 return;
             }
             
+            // connect to server for registration
             if (!connect()) {
                 statusRef.setText("Failed to connect to server");
                 statusRef.setForeground(Color.RED);
                 return;
             }
             
-            // Set registering flag to track registration responses
+            // set flag so server responses route to registration dialog
             isRegistering = true;
             
             Map<String, Object> msg = new java.util.HashMap<>();
@@ -266,7 +303,7 @@ public class GameClientGUI {
         });
         
         cancelButton.addActionListener(e -> {
-            isRegistering = false; // Reset flag when dialog is closed
+            isRegistering = false; // reset flag when dialog closes
             dialogRef.dispose();
         });
         
@@ -279,6 +316,13 @@ public class GameClientGUI {
     }
     
     
+    /**
+     * handle login button click - validate fields and send login to server
+     * 
+     * validates username and password are not empty, connects to server if needed,
+     * and sends login message. on success server will respond with login_success which
+     * triggers handleLoginSuccess and opens the main lobby window.
+     */
     private void handleLogin() {
         String username = usernameField.getText().trim();
         String password = new String(passwordField.getPassword());
@@ -300,9 +344,17 @@ public class GameClientGUI {
         sendMessage(Protocol.createMessage(msg));
     }
     
+    /**
+     * establish socket connection to server and start listener thread
+     * 
+     * creates socket to SERVER_HOST:SERVER_PORT, sets up readers/writers,
+     * and spawns ServerListenerGUI background thread to handle incoming messages.
+     * returns true if successful, false on connection error. uses existing connection
+     * if one is already open and not closed.
+     */
     private boolean connect() {
         if (socket != null && !socket.isClosed()) {
-            return true; // Already connected
+            return true; // already connected
         }
         
         try {
@@ -310,6 +362,7 @@ public class GameClientGUI {
             in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             out = new PrintWriter(socket.getOutputStream(), true);
             
+            // spawn background thread to listen for server messages
             listener = new ServerListenerGUI(in, this);
             listener.start();
             
@@ -320,7 +373,18 @@ public class GameClientGUI {
         }
     }
     
+    /**
+     * central message dispatcher - routes server messages to appropriate handlers.
+     * CRITICAL THREADING NOTE: all GUI updates MUST happen via SwingUtilities.invokeLater
+     * because Swing is NOT thread-safe. the listener thread runs in background and reads from
+     * socket, but can ONLY schedule GUI updates, not execute them directly. attempting to
+     * modify Swing components from listener thread causes race conditions and crashes.
+     * 
+     * this is a common mistake in Swing: invokeLater queues the update to EDT and returns
+     * immediately, so listener thread doesn't block on slow GUI operations.
+     */
     public void handleServerMessage(String message) {
+        // queue the entire handler to run on EDT to ensure all Swing updates are safe
         SwingUtilities.invokeLater(() -> {
             Map<String, Object> msg = Protocol.parseMessage(message);
             String type = (String) msg.get("type");
@@ -405,6 +469,13 @@ public class GameClientGUI {
         });
     }
     
+    /**
+     * process successful login response - update player info and open lobby window
+     * 
+     * server sends username, wins/losses/draws stats, name, and email. populate player
+     * object with these values, hide login window, create and show main lobby window,
+     * and request initial player list. from this point user is authenticated and in lobby.
+     */
     private void handleLoginSuccess(Map<String, Object> msg) {
         player.setUsername((String) msg.get("username"));
         player.setStats(
@@ -414,9 +485,8 @@ public class GameClientGUI {
         );
         player.setName((String) msg.get("name"));
         player.setEmail((String) msg.get("email"));
-        // Password is no longer sent from server for security
-        // Store empty or use a placeholder
-        player.setPassword("***"); // Indicate password is not available
+        // password is no longer sent from server for security
+        player.setPassword("***"); // indicate password not available
         player.setAuthenticated(true);
         
         loginFrame.setVisible(false);
@@ -424,6 +494,15 @@ public class GameClientGUI {
         listPlayers();
     }
     
+    /**
+     * build the main lobby window shown after successful login
+     * 
+     * displays player profile (username, name, email, stats), online players list,
+     * and control buttons (refresh players, leaderboard, logout). uses multiple panels:
+     * top has profile info and stats, center has scrollable player list with challenge
+     * button, bottom has status bar. when user selects a player and clicks challenge,
+     * sends challenge message to that player.
+     */
     private void createMainWindow() {
         mainFrame = new JFrame("Tic-Tac-Toe - " + player.getUsername());
         mainFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -443,25 +522,25 @@ public class GameClientGUI {
         gbc.insets = new Insets(5, 5, 5, 5);
         gbc.anchor = GridBagConstraints.WEST;
         
-        // Username
+        // Username display
         gbc.gridx = 0; gbc.gridy = 0;
         profilePanel.add(new JLabel("Username:"), gbc);
         gbc.gridx = 1;
         profilePanel.add(new JLabel(player.getUsername()), gbc);
         
-        // Name
+        // Name display
         gbc.gridx = 0; gbc.gridy = 1;
         profilePanel.add(new JLabel("Name:"), gbc);
         gbc.gridx = 1;
         profilePanel.add(new JLabel(player.getName() != null && !player.getName().isEmpty() ? player.getName() : "N/A"), gbc);
         
-        // Email
+        // Email display
         gbc.gridx = 0; gbc.gridy = 2;
         profilePanel.add(new JLabel("Email:"), gbc);
         gbc.gridx = 1;
         profilePanel.add(new JLabel(player.getEmail() != null && !player.getEmail().isEmpty() ? player.getEmail() : "N/A"), gbc);
         
-        // Statistics
+        // Statistics display (wins/losses/draws)
         gbc.gridx = 0; gbc.gridy = 3;
         profilePanel.add(new JLabel("Statistics:"), gbc);
         gbc.gridx = 1;
@@ -471,7 +550,7 @@ public class GameClientGUI {
         
         topPanel.add(profilePanel, BorderLayout.CENTER);
         
-        // Control panel
+        // Control panel with buttons
         JPanel controlPanel = new JPanel(new FlowLayout());
         JButton refreshButton = new JButton("Refresh Players");
         refreshButton.addActionListener(e -> listPlayers());
@@ -486,7 +565,7 @@ public class GameClientGUI {
         
         mainPanel.add(topPanel, BorderLayout.NORTH);
         
-        // Center - Players list
+        // Center - Players list with challenge button
         JPanel playersPanel = new JPanel(new BorderLayout());
         playersPanel.setBorder(BorderFactory.createTitledBorder("Online Players"));
         playersList = new JList<>(playersListModel);
@@ -494,7 +573,7 @@ public class GameClientGUI {
         JScrollPane scrollPane = new JScrollPane(playersList);
         playersPanel.add(scrollPane, BorderLayout.CENTER);
         
-        // Challenge button
+        // Challenge button - only works if player is selected from list
         JButton challengeButton = new JButton("Challenge Selected Player");
         challengeButton.addActionListener(e -> {
             String selected = playersList.getSelectedValue();
@@ -508,7 +587,7 @@ public class GameClientGUI {
         
         mainPanel.add(playersPanel, BorderLayout.CENTER);
         
-        // Status area
+        // Status area at bottom
         statusLabel = new JLabel("Status: In Lobby", JLabel.CENTER);
         statusLabel.setBorder(BorderFactory.createLoweredBevelBorder());
         mainPanel.add(statusLabel, BorderLayout.SOUTH);
@@ -517,6 +596,14 @@ public class GameClientGUI {
         mainFrame.setVisible(true);
     }
     
+    /**
+     * build the game window with 3x3 board buttons and game status
+     * 
+     * creates game frame with board grid of 9 buttons for moves. tracks current player
+     * and enables/disables buttons based on whose turn it is. shows whose turn it is at top.
+     * bottom has rematch and back-to-lobby buttons (enabled only after game ends). includes
+     * window listener that asks for confirmation before closing (forfeit handling).
+     */
     private void createGameWindow() {
         if (gameFrame != null) {
             gameFrame.dispose();
@@ -527,7 +614,7 @@ public class GameClientGUI {
         gameFrame.addWindowListener(new java.awt.event.WindowAdapter() {
             @Override
             public void windowClosing(java.awt.event.WindowEvent windowEvent) {
-                // If in an active game, show confirmation before leaving (forfeit)
+                // if in an active game, confirm before leaving (forfeit)
                 if (inGame && currentGameId != null) {
                     int choice = JOptionPane.showConfirmDialog(
                         gameFrame,
@@ -537,16 +624,16 @@ public class GameClientGUI {
                         JOptionPane.WARNING_MESSAGE
                     );
                     if (choice != JOptionPane.YES_OPTION) {
-                        return; // User chose No - do not leave, keep window open
+                        return; // user chose no - keep window open
                     }
-                    // User confirmed Yes - send leave game to server
+                    // user confirmed - send leave game to server
                     Map<String, Object> msg = new java.util.HashMap<>();
                     msg.put("type", "LEAVE_GAME");
                     msg.put("gameId", currentGameId);
                     sendMessage(Protocol.createMessage(msg));
                 }
                 
-                // Close window and return to lobby
+                // close window and return to lobby
                 if (gameFrame != null) {
                     gameFrame.dispose();
                     gameFrame = null;
@@ -556,7 +643,7 @@ public class GameClientGUI {
                     mainFrame.toFront();
                 }
                 
-                // Update status to show we're back in lobby
+                // show we're back in lobby
                 showStatus("Status: In Lobby", Color.BLUE);
                 
                 listPlayers();
@@ -571,7 +658,7 @@ public class GameClientGUI {
         JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
         mainPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         
-        // Current player label
+        // Current player label - shows whose turn it is
         currentPlayerLabel = new JLabel("Your turn!", JLabel.CENTER);
         currentPlayerLabel.setFont(new Font("Arial", Font.BOLD, 16));
         currentPlayerLabel.setBorder(BorderFactory.createLoweredBevelBorder());
@@ -582,6 +669,7 @@ public class GameClientGUI {
         boardPanel.setBorder(BorderFactory.createTitledBorder("Game Board"));
         boardButtons = new JButton[3][3];
         
+        // create 3x3 button grid for the board
         for (int i = 0; i < 3; i++) {
             for (int j = 0; j < 3; j++) {
                 final int x = i;
@@ -597,12 +685,12 @@ public class GameClientGUI {
         
         mainPanel.add(boardPanel, BorderLayout.CENTER);
         
-        // Button panel (for after game ends) - Make it more visible
+        // Button panel (for after game ends)
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 10));
         buttonPanel.setBorder(BorderFactory.createTitledBorder("Game Options"));
         buttonPanel.setBackground(Color.WHITE);
         rematchButton = new JButton("Request Rematch");
-        rematchButton.setEnabled(false); // Enabled after game ends
+        rematchButton.setEnabled(false); // enabled after game ends
         rematchButton.setPreferredSize(new Dimension(160, 35));
         rematchButton.setFont(new Font("Arial", Font.BOLD, 12));
         rematchButton.addActionListener(e -> {
@@ -613,7 +701,7 @@ public class GameClientGUI {
             }
         });
         lobbyButton = new JButton("Back to Lobby");
-        lobbyButton.setEnabled(false); // Enabled after game ends
+        lobbyButton.setEnabled(false); // enabled after game ends
         lobbyButton.setPreferredSize(new Dimension(160, 35));
         lobbyButton.setFont(new Font("Arial", Font.BOLD, 12));
         lobbyButton.addActionListener(e -> goBackToLobby());
@@ -639,9 +727,18 @@ public class GameClientGUI {
     private JButton rematchButton;
     private JButton lobbyButton;
     
+    /**
+     * sync board display with game state - update button text and enable/disable
+     * 
+     * called whenever board state changes (after receiving update or result from server).
+     * renders cells with X or O, disables cells with moves on them. enables cells only
+     * if it's the current player's turn and the game is still active. also updates the
+     * "whose turn" label at the top showing if it's your turn or opponent's turn.
+     */
     private void updateBoardDisplay() {
         if (boardButtons == null) return;
         
+        // update button text and enable state based on board state
         for (int i = 0; i < 3; i++) {
             for (int j = 0; j < 3; j++) {
                 char cell = currentBoard[i][j];
@@ -649,14 +746,17 @@ public class GameClientGUI {
                 
                 if (cell == ' ') {
                     button.setText(" ");
+                    // enable button if it's your turn and game is active
                     button.setEnabled(inGame && currentPlayer != null && currentPlayer.equals(player.getUsername()));
                 } else {
+                    // cell is taken - show X or O and disable
                     button.setText(String.valueOf(cell));
                     button.setEnabled(false);
                 }
             }
         }
         
+        // update whose-turn label at top of board
         if (currentPlayerLabel != null && currentPlayer != null) {
             if (currentPlayer.equals(player.getUsername())) {
                 currentPlayerLabel.setText("Your turn!");
@@ -668,12 +768,19 @@ public class GameClientGUI {
         }
     }
     
+    /**
+     * update players list display with comma-separated player names
+     * 
+     * called when server sends player list. parses comma-separated names and populates
+     * list model. excludes current user from the list.
+     */
     private void handlePlayersList(Map<String, Object> msg) {
         String playersStr = (String) msg.get("players");
         playersListModel.clear();
         if (playersStr != null && !playersStr.isEmpty()) {
             String[] players = playersStr.split(",");
             for (String p : players) {
+                // don't show self in player list
                 if (!p.equals(player.getUsername())) {
                     playersListModel.addElement(p);
                 }
@@ -681,6 +788,12 @@ public class GameClientGUI {
         }
     }
     
+    /**
+     * process incoming challenge - show dialog asking accept/reject
+     * 
+     * displays modal dialog with challenger name asking if you accept the game.
+     * yes/no response is sent back to server.
+     */
     private void handleChallenge(Map<String, Object> msg) {
         String challenger = (String) msg.get("challenger");
         int response = JOptionPane.showConfirmDialog(
@@ -693,28 +806,41 @@ public class GameClientGUI {
         respondToChallenge(challenger, response == JOptionPane.YES_OPTION ? "ACCEPT" : "REJECT");
     }
     
+    /**
+     * handle challenge response from opponent
+     * 
+     * if accepted, show status message that opponent accepted. if rejected, show message
+     * and optional dialog to return to lobby.
+     */
     private void handleChallengeResponse(Map<String, Object> msg) {
         String response = (String) msg.get("response");
         String opponent = (String) msg.get("opponent");
         
         if ("ACCEPT".equals(response)) {
-            // Status will be updated to "In Match" when game starts
+            // opponent accepted - game will start when server sends start_game message
             showStatus("Status: In Lobby - " + opponent + " accepted your challenge!", Color.GREEN);
         } else {
             showStatus("Status: In Lobby - " + opponent + " rejected your challenge.", Color.ORANGE);
         }
     }
     
+    /**
+     * initialize game window and sync local board state
+     * 
+     * server sends game id, both player names, and whose turn it is. extract these,
+     * hide lobby, create game window, and sync board display.
+     */
     private void handleStartGame(Map<String, Object> msg) {
         currentGameId = (String) msg.get("gameId");
         String player1 = (String) msg.get("player1");
         String player2 = (String) msg.get("player2");
         currentPlayer = (String) msg.get("currentPlayer");
         
+        // figure out who the opponent is
         currentOpponent = player1.equals(player.getUsername()) ? player2 : player1;
         inGame = true;
         
-        // Initialize board
+        // initialize board as empty
         for (int i = 0; i < 3; i++) {
             for (int j = 0; j < 3; j++) {
                 currentBoard[i][j] = ' ';
@@ -722,17 +848,24 @@ public class GameClientGUI {
         }
         
         createGameWindow();
-        // Update status to show we're in a match
+        // update status to show we're in a match
         if (mainFrame != null && statusLabel != null) {
             showStatus("Status: In Match - Playing against " + currentOpponent, Color.GREEN);
         }
     }
     
+    /**
+     * sync board state with server update during game
+     * 
+     * server sends board as nested map and current player. parse board coords and update
+     * local board array. then re-render board display (which enables/disables buttons).
+     */
     private void handleUpdate(Map<String, Object> msg) {
         @SuppressWarnings("unchecked")
         Map<String, String> boardMap = (Map<String, String>) msg.get("board");
         currentPlayer = (String) msg.get("currentPlayer");
         
+        // parse board from server format (coordinate -> character map)
         if (boardMap != null) {
             for (Map.Entry<String, String> entry : boardMap.entrySet()) {
                 String[] coords = entry.getKey().split(",");
@@ -745,11 +878,18 @@ public class GameClientGUI {
         updateBoardDisplay();
     }
     
+    /**
+     * game ended - show result and final board state
+     * 
+     * server sends final result (win/loss/draw), final board, and our result from our perspective.
+     * update stats, disable all board buttons, show result message, and enable rematch/lobby buttons.
+     */
     private void handleResult(Map<String, Object> msg) {
         String result = (String) msg.get("result");
         @SuppressWarnings("unchecked")
         Map<String, String> boardMap = (Map<String, String>) msg.get("board");
         
+        // sync final board state
         if (boardMap != null) {
             for (Map.Entry<String, String> entry : boardMap.entrySet()) {
                 String[] coords = entry.getKey().split(",");
@@ -761,7 +901,7 @@ public class GameClientGUI {
         
         inGame = false;
         
-        // Disable all board buttons
+        // disable all board buttons now that game ended
         if (boardButtons != null) {
             for (int i = 0; i < 3; i++) {
                 for (int j = 0; j < 3; j++) {
@@ -772,9 +912,9 @@ public class GameClientGUI {
             }
         }
         
-        // Update board display
         updateBoardDisplay();
         
+        // determine result message and update local stats
         String message;
         Color color;
         if ("WIN".equals(result)) {
@@ -791,22 +931,22 @@ public class GameClientGUI {
             player.incrementDraws();
         }
         
-        // Update stats display in main window
+        // update stats display in main window
         updateStatsDisplay();
         
-        // Update status in game window
+        // update status in game window
         showStatus(message, color);
         currentPlayerLabel.setText(message);
         
-        // Update main window status to show we're back in lobby
+        // update main window status to show we're back in lobby
         if (mainFrame != null && statusLabel != null) {
             showStatus("Status: In Lobby - Game ended", Color.BLUE);
         }
         
         currentGameId = null;
-        // Keep currentOpponent for rematch
+        // keep currentOpponent for rematch
         
-        // Enable buttons IMMEDIATELY on EDT
+        // enable buttons on EDT for rematch/lobby
         SwingUtilities.invokeLater(() -> {
             if (rematchButton != null) {
                 rematchButton.setEnabled(true);
@@ -819,7 +959,7 @@ public class GameClientGUI {
                 lobbyButton.setVisible(true);
             }
             
-            // Force immediate UI update
+            // force immediate UI update
             if (gameFrame != null) {
                 gameFrame.revalidate();
                 gameFrame.repaint();
@@ -828,6 +968,9 @@ public class GameClientGUI {
         });
     }
     
+    /**
+     * handle rematch request from opponent - show dialog asking accept/reject
+     */
     private void handleRematchRequest(Map<String, Object> msg) {
         String requester = (String) msg.get("requester");
         int response = JOptionPane.showConfirmDialog(
@@ -840,6 +983,9 @@ public class GameClientGUI {
         respondToRematch(requester, response == JOptionPane.YES_OPTION ? "ACCEPT" : "REJECT");
     }
     
+    /**
+     * handle rematch response - show if opponent accepted or rejected
+     */
     private void handleRematchResponse(Map<String, Object> msg) {
         String response = (String) msg.get("response");
         String opponent = (String) msg.get("opponent");
@@ -848,7 +994,7 @@ public class GameClientGUI {
             showStatus(opponent + " accepted your rematch request!", Color.GREEN);
         } else {
             showStatus(opponent + " declined your rematch request.", Color.ORANGE);
-            // Option to go back to lobby
+            // optional dialog to go back to lobby
             if (gameFrame != null) {
                 int choice = JOptionPane.showConfirmDialog(
                     gameFrame,
@@ -868,6 +1014,11 @@ public class GameClientGUI {
         }
     }
     
+    /**
+     * display leaderboard in a scrollable table dialog
+     * 
+     * formats server data as HTML table with rank, player, wins, losses, draws.
+     */
     private void handleLeaderboard(Map<String, Object> msg) {
         String data = (String) msg.get("data");
         if (data == null || data.isEmpty()) {
@@ -902,17 +1053,22 @@ public class GameClientGUI {
         JOptionPane.showMessageDialog(mainFrame, scrollPane, "Leaderboard", JOptionPane.INFORMATION_MESSAGE);
     }
     
+    /**
+     * opponent disconnected during game - you win by forfeit
+     * 
+     * shows notification dialog, increments win stat, returns to lobby.
+     */
     private void handleOpponentDisconnected(Map<String, Object> msg) {
-        // The disconnected player gets a loss, so we (the remaining player) get a win
+        // disconnected player loses so we win
         player.incrementWins();
         updateStatsDisplay();
         
         inGame = false;
         
-        // Show notification dialog FIRST - this blocks until user clicks OK
+        // show notification dialog - blocks until user clicks OK
         JFrame parentFrame = gameFrame != null ? gameFrame : (mainFrame != null ? mainFrame : loginFrame);
         
-        // Bring parent window to front first
+        // bring parent window to front first
         if (parentFrame != null) {
             parentFrame.toFront();
             parentFrame.requestFocus();
@@ -927,47 +1083,56 @@ public class GameClientGUI {
         );
         
         JDialog notificationDialog = dialog.createDialog(parentFrame, "Opponent Disconnected");
-        notificationDialog.setAlwaysOnTop(true); // Keep dialog on top
-        notificationDialog.toFront(); // Bring to front
-        notificationDialog.requestFocus(); // Request focus
-        notificationDialog.setVisible(true); // Blocks until user clicks OK
+        notificationDialog.setAlwaysOnTop(true); // keep on top
+        notificationDialog.toFront();
+        notificationDialog.requestFocus();
+        notificationDialog.setVisible(true); // blocks until user clicks OK
         
-        // AFTER user clicks OK, close game window and return to lobby
+        // after user clicks OK, close game window and return to lobby
         if (gameFrame != null) {
             gameFrame.dispose();
             gameFrame = null;
             gameStatusLabel = null;
         }
         
-        // Show main window (lobby)
+        // show main window (lobby)
         if (mainFrame != null) {
             mainFrame.setVisible(true);
             mainFrame.toFront();
             mainFrame.requestFocus();
         }
         
-        // Update main window status
+        // update main window status
         showStatus("Status: In Lobby - Opponent disconnected. You win by forfeit!", Color.GREEN);
         
-        // Refresh player list
+        // refresh player list
         listPlayers();
         
         currentGameId = null;
         currentOpponent = null;
     }
     
+    /**
+     * send raw message string to server
+     */
     public void sendMessage(String message) {
         if (out != null) {
             out.println(message);
         }
     }
     
+    /**
+     * request list of online players from server
+     */
     public void listPlayers() {
         Map<String, Object> msg = new java.util.HashMap<>();
         msg.put("type", "LIST_PLAYERS");
         sendMessage(Protocol.createMessage(msg));
     }
     
+    /**
+     * send challenge to opponent
+     */
     public void challenge(String opponent) {
         Map<String, Object> msg = new java.util.HashMap<>();
         msg.put("type", "CHALLENGE");
@@ -976,6 +1141,9 @@ public class GameClientGUI {
         showStatus("Status: In Lobby - Challenging " + opponent + "...", Color.BLUE);
     }
     
+    /**
+     * respond to incoming challenge with accept/reject
+     */
     public void respondToChallenge(String challenger, String response) {
         Map<String, Object> msg = new java.util.HashMap<>();
         msg.put("type", "CHALLENGE_RESPONSE");
@@ -984,6 +1152,9 @@ public class GameClientGUI {
         sendMessage(Protocol.createMessage(msg));
     }
     
+    /**
+     * send move to server with coordinates
+     */
     public void makeMove(int x, int y) {
         if (currentGameId == null || !inGame) {
             showStatus("Not in a game", Color.RED);
@@ -1003,6 +1174,9 @@ public class GameClientGUI {
         sendMessage(Protocol.createMessage(msg));
     }
     
+    /**
+     * request rematch with last opponent
+     */
     public void requestRematch() {
         if (currentOpponent == null) {
             showStatus("No previous opponent found", Color.RED);
@@ -1022,6 +1196,9 @@ public class GameClientGUI {
         showStatus("Requesting rematch with " + currentOpponent + "...", Color.BLUE);
     }
     
+    /**
+     * respond to rematch request with accept/reject
+     */
     public void respondToRematch(String requester, String response) {
         Map<String, Object> msg = new java.util.HashMap<>();
         msg.put("type", "REMATCH_RESPONSE");
@@ -1030,38 +1207,47 @@ public class GameClientGUI {
         sendMessage(Protocol.createMessage(msg));
     }
     
+    /**
+     * request leaderboard ranking from server
+     */
     public void requestLeaderboard() {
         Map<String, Object> msg = new java.util.HashMap<>();
         msg.put("type", "LEADERBOARD");
         sendMessage(Protocol.createMessage(msg));
     }
     
+    /**
+     * close game window and return to lobby without changing game state
+     */
     private void goBackToLobby() {
-        // Close game window
+        // close game window
         if (gameFrame != null) {
             gameFrame.dispose();
             gameFrame = null;
         }
         
-        // Show main window
+        // show main window
         if (mainFrame != null) {
             mainFrame.setVisible(true);
             mainFrame.toFront();
             mainFrame.requestFocus();
         }
         
-        // Reset game state
+        // reset game state
         inGame = false;
         currentGameId = null;
-        // Keep currentOpponent for potential rematch later
+        // keep currentOpponent for potential rematch later
         
-        // Refresh player list
+        // refresh player list
         listPlayers();
         
-        // Clear any old challenge messages and show lobby status
+        // clear old challenge messages and show lobby status
         showStatus("Status: In Lobby", Color.BLUE);
     }
     
+    /**
+     * send logout message to server and close all windows
+     */
     public void logout() {
         Map<String, Object> msg = new java.util.HashMap<>();
         msg.put("type", "LOGOUT");
@@ -1073,6 +1259,9 @@ public class GameClientGUI {
         System.exit(0);
     }
     
+    /**
+     * close socket and stop listener thread
+     */
     public void disconnect() {
         if (listener != null) {
             listener.stopListening();
@@ -1088,16 +1277,19 @@ public class GameClientGUI {
     }
     
     /**
-     * Handle server disconnection - show notification and shutdown
+     * handle server disconnection - show error dialog and close app
+     * 
+     * runs on EDT to ensure thread-safe window operations. shows modal dialog
+     * explaining connection was lost, then closes all windows and exits.
      */
     public void handleServerDisconnection(String reason) {
         SwingUtilities.invokeLater(() -> {
-            // Stop the listener first to prevent further messages
+            // stop the listener first to prevent further messages
             if (listener != null) {
                 listener.stopListening();
             }
             
-            // Bring any open window to front first
+            // bring any open window to front first
             JFrame parentFrame = null;
             if (mainFrame != null && mainFrame.isVisible()) {
                 mainFrame.toFront();
@@ -1113,7 +1305,7 @@ public class GameClientGUI {
                 parentFrame = loginFrame;
             }
             
-            // Show error notification FIRST - this blocks until user clicks OK
+            // show error notification - blocks until user clicks OK
             JOptionPane dialog = new JOptionPane(
                 "Connection to server lost.\n\n" + 
                 (reason != null ? reason : "The server connection has been closed.") + 
@@ -1123,12 +1315,12 @@ public class GameClientGUI {
             );
             
             JDialog errorDialog = dialog.createDialog(parentFrame, "Server Disconnected");
-            errorDialog.setAlwaysOnTop(true); // Keep dialog on top
-            errorDialog.toFront(); // Bring to front
-            errorDialog.requestFocus(); // Request focus
-            errorDialog.setVisible(true); // Show and block until user clicks OK
+            errorDialog.setAlwaysOnTop(true); // keep on top
+            errorDialog.toFront();
+            errorDialog.requestFocus();
+            errorDialog.setVisible(true); // show and block until user clicks OK
             
-            // AFTER user clicks OK, close all windows
+            // after user clicks OK, close all windows
             if (gameFrame != null) {
                 gameFrame.dispose();
             }
@@ -1142,16 +1334,21 @@ public class GameClientGUI {
                 loginFrame.dispose();
             }
             
-            // Disconnect from server
+            // disconnect from server
             disconnect();
             
-            // Exit application
+            // exit application
             System.exit(0);
         });
     }
     
+    /**
+     * update status labels in active windows with message and color
+     * 
+     * if registering, show in registration dialog. otherwise show in main or game window.
+     */
     private void showStatus(String message, Color color) {
-        // Don't show in login window if we're registering - show in registration dialog instead
+        // don't show in login window if registering - show in registration dialog instead
         if (isRegistering && registrationStatusLabel != null && registrationDialog != null) {
             SwingUtilities.invokeLater(() -> {
                 registrationStatusLabel.setText(message);
@@ -1160,18 +1357,21 @@ public class GameClientGUI {
             return;
         }
         
-        // Update main window status
+        // update main window status
         if (statusLabel != null) {
             statusLabel.setText(message);
             statusLabel.setForeground(color);
         }
-        // Update game window status if it exists
+        // update game window status if it exists
         if (gameStatusLabel != null) {
             gameStatusLabel.setText(message);
             gameStatusLabel.setForeground(color);
         }
     }
     
+    /**
+     * update stats label in main window after stat changes
+     */
     private void updateStatsDisplay() {
         if (statsLabel != null) {
             statsLabel.setText(String.format("Wins: %d | Losses: %d | Draws: %d", 
@@ -1179,9 +1379,13 @@ public class GameClientGUI {
         }
     }
     
+    /**
+     * application entry point - create GUI on EDT with system look and feel
+     */
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
             try {
+                // use system native look and feel instead of default swing L&F
                 UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
             } catch (Exception e) {
                 e.printStackTrace();
@@ -1190,4 +1394,3 @@ public class GameClientGUI {
         });
     }
 }
-
