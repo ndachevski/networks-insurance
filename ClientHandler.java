@@ -4,7 +4,9 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * ClientHandler.java - Handles each client connection in a separate thread
+  this class run in own thread and manage one connected client. it receive messages from client,
+  check what type of message it is, and then handle it appropriately. it also send response back to client.
+  this way server can handle many clients at same time without blocking
  */
 public class ClientHandler extends Thread {
     private Socket socket;
@@ -22,12 +24,15 @@ public class ClientHandler extends Thread {
         this.socket = socket;
         this.userManager = userManager;
         this.server = server;
+         // create unique session id for this connection so we can track it
         this.sessionId = UUID.randomUUID().toString();
         this.authenticated = false;
         this.rateLimiter = server.getRateLimiter();
+             // get the address of the client so we can use it for rate limiting
         this.clientAddress = socket.getRemoteSocketAddress().toString();
         
         try {
+            // set up input and output stream so we can receive and send message to client
             in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             out = new PrintWriter(socket.getOutputStream(), true);
         } catch (IOException e) {
@@ -39,47 +44,57 @@ public class ClientHandler extends Thread {
     public void run() {
         try {
             String message;
+               // keep reading message from client until client close connection or something go wrong
             while ((message = in.readLine()) != null) {
                 handleMessage(message);
             }
         } catch (IOException e) {
             System.out.println("Client disconnected: " + (username != null ? username : "unknown"));
         } finally {
+             // make sure we clean up when client disconnect
             cleanup();
         }
     }
     
     /**
-     * Handle incoming messages from client
+      handles incoming messages from the client
+      then check message type, and call right handler method for it
      */
     private void handleMessage(String message) {
         Map<String, Object> msg = Protocol.parseMessage(message);
         String type = (String) msg.get("type");
-        
+        // convert json message string into map so we can easily access fields
         if (type == null) {
             sendMessage(Protocol.createErrorMessage("Invalid message format"));
             return;
         }
         
+      // check what type of message it is and call appropriate handler
         switch (type) {
             case "REGISTER":
                 handleRegister(msg);
                 break;
+       // user wants to login with username and password          
             case "LOGIN":
                 handleLogin(msg);
                 break;
+         // user want to see list of online player they can challenge         
             case "LIST_PLAYERS":
                 handleListPlayers();
                 break;
+        // user want to send challenge to another player         
             case "CHALLENGE":
                 handleChallenge(msg);
                 break;
+        // user respond to incoming challenge (accept or reject)          
             case "CHALLENGE_RESPONSE":
                 handleChallengeResponse(msg);
                 break;
+        // user make move during game (send x,y coordinate)        
             case "MOVE":
                 handleMove(msg);
                 break;
+         // user want to logout and disconnect        
             case "LOGOUT":
                 handleLogout();
                 break;
