@@ -1,3 +1,5 @@
+// Students: CSY23102, CSY23052, CSY23031
+
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -68,16 +70,18 @@ public class GameServer {
         if (handler.getUsername() != null) {
             clients.remove(handler.getUsername());
             
-            // Handle disconnection during game
+            // handle disconnection during game: if a player disconnects mid-match, we need to
+            // notify the opponent, update stats (disconnected player loses), and clean up the game session
             String gameId = findGameByPlayer(handler.getUsername());
             if (gameId != null) {
                 GameSession game = games.get(gameId);
                 if (game != null && !game.isGameOver()) {
                     String disconnectedPlayer = handler.getUsername();
+                    // determine who the opponent is (if player is player1, opponent is player2, and vice versa)
                     String opponent = game.getPlayer1().equals(disconnectedPlayer) 
                         ? game.getPlayer2() : game.getPlayer1();
                     
-                    // Update statistics: disconnected player gets loss, opponent gets win
+                    // update statistics: disconnected player gets loss, opponent gets win
                     userManager.updateStats(disconnectedPlayer, "LOSS");
                     userManager.updateStats(opponent, "WIN");
                     
@@ -120,14 +124,16 @@ public class GameServer {
     
     public void sendChallenge(String opponent, String challenger) {
         ClientHandler challengerHandler = clients.get(challenger);
-        // Only one game per player: challenger cannot invite if already in a match
+        // only one game per player constraint: prevents creating multiple concurrent games
+        // this simplifies state management and prevents a player from being in two matches at once.
+        // first, check if the challenger is already in a match
         if (findGameByPlayer(challenger) != null) {
             if (challengerHandler != null) {
                 challengerHandler.sendMessage(Protocol.createErrorMessage("You are already in a match"));
             }
             return;
         }
-        // Cannot invite a player who is already in a match
+        // also check if the opponent is already in a match (prevents interrupting ongoing games)
         if (findGameByPlayer(opponent) != null) {
             if (challengerHandler != null) {
                 challengerHandler.sendMessage(Protocol.createErrorMessage("That player is currently in a match"));
@@ -151,6 +157,8 @@ public class GameServer {
     }
     
     public void handleChallengeResponse(String challenger, String opponent, String response) {
+        // validate that there's actually a pending challenge between these two players
+        // this prevents accepting/rejecting challenges that don't exist or don't match
         if (!pendingChallenges.containsKey(challenger) || 
             !pendingChallenges.get(challenger).equals(opponent)) {
             ClientHandler opponentHandler = clients.get(opponent);
@@ -179,12 +187,15 @@ public class GameServer {
     }
     
     private void startGame(String player1, String player2) {
-        // Only one game per player: reject if either is already in a match
+        // double-check the one-game-per-player constraint even though we validate earlier.
+        // this defensive programming pattern prevents race conditions where both players
+        // might try to start a game simultaneously
         if (findGameByPlayer(player1) != null || findGameByPlayer(player2) != null) {
             sendToPlayer(player1, Protocol.createErrorMessage("Could not start game: one of the players is already in a match."));
             sendToPlayer(player2, Protocol.createErrorMessage("Could not start game: one of the players is already in a match."));
             return;
         }
+        // generate unique game id using UUID to track this game session
         String gameId = UUID.randomUUID().toString();
         GameSession game = new GameSession(gameId, player1, player2);
         games.put(gameId, game);
@@ -202,12 +213,14 @@ public class GameServer {
     }
     
     public void processMove(String gameId, String player, int x, int y) {
+        // retrieve the game session and validate it exists
         GameSession game = games.get(gameId);
         if (game == null) {
             sendToPlayer(player, Protocol.createErrorMessage("Game not found"));
             return;
         }
         
+        // verify that the player making the move is actually a participant in this game
         if (!game.getPlayer1().equals(player) && !game.getPlayer2().equals(player)) {
             sendToPlayer(player, Protocol.createErrorMessage("Not a player in this game"));
             return;
@@ -218,6 +231,7 @@ public class GameServer {
             return;
         }
         
+        // attempt to make the move (validates position is empty, within bounds, etc.)
         if (!game.makeMove(player, x, y)) {
             sendToPlayer(player, Protocol.createErrorMessage("Invalid move, try again"));
             return;
@@ -231,15 +245,17 @@ public class GameServer {
         updateMsg.put("currentPlayer", game.getCurrentPlayer());
         
         String updateMessage = Protocol.createMessage(updateMsg);
+        // broadcast updated board state to both players so they stay in sync
         sendToPlayer(game.getPlayer1(), updateMessage);
         sendToPlayer(game.getPlayer2(), updateMessage);
         
-        // Check if game is over
+        // check if the game has ended (win, loss, or draw)
         if (game.isGameOver()) {
+            // get the result for each player (WIN, LOSS, or DRAW)
             String result1 = game.getResultFor(game.getPlayer1());
             String result2 = game.getResultFor(game.getPlayer2());
             
-            // Update statistics
+            // update win/loss/draw statistics in UserManager for leaderboard tracking
             userManager.updateStats(game.getPlayer1(), result1);
             userManager.updateStats(game.getPlayer2(), result2);
             
@@ -259,7 +275,7 @@ public class GameServer {
             sendToPlayer(game.getPlayer1(), Protocol.createMessage(resultMsg1));
             sendToPlayer(game.getPlayer2(), Protocol.createMessage(resultMsg2));
             
-            // Store last opponents for rematch
+            // store last opponent so players can rematch without typing the username again
             lastOpponents.put(game.getPlayer1(), game.getPlayer2());
             lastOpponents.put(game.getPlayer2(), game.getPlayer1());
             
@@ -268,34 +284,36 @@ public class GameServer {
     }
     
     /**
-     * Handle player leaving game (e.g., closing game window)
+     * Handle player leaving game (e.g., closing game window). Similar to disconnect but
+     * explicitly initiated by the player rather than a network failure.
      */
     public void handleLeaveGame(String gameId, String player) {
         GameSession game = games.get(gameId);
         if (game == null) {
-            return; // Game doesn't exist or already ended
+            return; // game doesn't exist or already ended
         }
         
         if (!game.isGameOver()) {
             String leavingPlayer = player;
+            // determine the opponent (mirror logic to removeClient method)
             String opponent = game.getPlayer1().equals(leavingPlayer) 
                 ? game.getPlayer2() : game.getPlayer1();
             
-            // Update statistics: leaving player gets loss, opponent gets win
+            // update statistics: player who leaves mid-game receives a loss
             userManager.updateStats(leavingPlayer, "LOSS");
             userManager.updateStats(opponent, "WIN");
             
-            // Store last opponents for rematch
+            // store last opponent for rematch possibility
             lastOpponents.put(leavingPlayer, opponent);
             lastOpponents.put(opponent, leavingPlayer);
             
-            // Notify opponent
+            // notify opponent that the game was abandoned
             Map<String, Object> msg = new java.util.HashMap<>();
             msg.put("type", "OPPONENT_DISCONNECTED");
             msg.put("gameId", gameId);
             sendToPlayer(opponent, Protocol.createMessage(msg));
             
-            // Remove game
+            // clean up the game session from memory
             games.remove(gameId);
         }
     }
@@ -323,7 +341,7 @@ public class GameServer {
     
     public void sendRematchRequest(String opponent, String requester) {
         ClientHandler requesterHandler = clients.get(requester);
-        // Only one game per player: requester cannot request rematch if already in a match
+        // apply same constraints as challenge: one game per player, both must be available
         if (findGameByPlayer(requester) != null) {
             if (requesterHandler != null) {
                 requesterHandler.sendMessage(Protocol.createErrorMessage("You are already in a match"));
@@ -409,4 +427,3 @@ public class GameServer {
         server.start();
     }
 }
-
