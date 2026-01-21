@@ -1,8 +1,12 @@
+// Students: CSY23102, CSY23052, CSY23031
+
 import java.io.BufferedReader;
 import java.io.IOException;
 
 /**
- * ServerListenerGUI.java - Thread that listens for incoming server messages (GUI version)
+ * serverlistenergui is the swing gui version of serverlistener. runs in its own thread
+ * listening for server messages and routing them to the gui client. updates ui when
+ * the server connection changes state
  */
 public class ServerListenerGUI extends Thread {
     private BufferedReader in;
@@ -19,14 +23,17 @@ public class ServerListenerGUI extends Thread {
     public void run() {
         try {
             String message;
+            // read messages from server until connection closes
             while (running && (message = in.readLine()) != null) {
+                // hand off to gui client for processing
                 client.handleServerMessage(message);
             }
-            // If we exit the loop, the server closed the connection
+            // if we exit the loop normally, the server closed
             if (running) {
                 client.handleServerDisconnection("Server closed the connection");
             }
         } catch (IOException e) {
+            // connection lost or error reading from socket
             if (running) {
                 client.handleServerDisconnection("Connection lost: " + e.getMessage());
             }
@@ -37,12 +44,3 @@ public class ServerListenerGUI extends Thread {
         running = false;
     }
 }
-
-
-
-
-
-
-
-
-
